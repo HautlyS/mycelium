@@ -287,6 +287,7 @@ async fn main() -> Result<()> {
         network_vram_mb: Arc::new(RwLock::new(0)),
         assigned_layers: Arc::new(RwLock::new("none".into())),
         assigned_experts: Arc::new(RwLock::new(Vec::new())),
+        inference_service: Arc::new(RwLock::new(Some(inference_service))),
     };
 
     // Clone state for the server task

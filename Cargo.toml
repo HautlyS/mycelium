@@ -9,6 +9,7 @@ members = [
     "crates/mycelium-substrate",
     "crates/mycelium-fruit",
     "crates/mycelium-node",
+    "crates/mycelium-web",
 ]
 
 [workspace.package]

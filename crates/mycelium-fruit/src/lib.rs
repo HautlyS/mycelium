@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 // ─── Shared Application State ────────────────────────────────────────────────
 
@@ -53,6 +53,8 @@ pub struct AppState {
     pub assigned_layers: Arc<RwLock<String>>,
     /// Assigned experts
     pub assigned_experts: Arc<RwLock<Vec<usize>>>,
+    /// Inference service backend
+    pub inference_service: Arc<RwLock<Option<InferenceService>>>,
 }
 
 impl AppState {
@@ -416,7 +418,7 @@ async fn generate(
     let start = std::time::Instant::now();
     let request_id = uuid::Uuid::new_v4();
     
-    let _inference_request = InferenceRequest {
+    let inference_request = InferenceRequest {
         id: request_id,
         prompt: req.prompt.clone(),
         max_tokens: req.max_tokens,
@@ -427,24 +429,53 @@ async fn generate(
 
     info!("Generate request: '{}' (max_tokens={}, temp={:.2})", req.prompt, req.max_tokens, req.temperature);
 
+    // Try to use the inference service if available
+    let response = {
+        let service_guard = state.inference_service.read().await;
+        if let Some(service) = service_guard.as_ref() {
+            match service.infer(inference_request).await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    warn!("Inference service error: {}", e);
+                    InferenceResponse {
+                        id: request_id,
+                        text: Some(format!("[Inference error: {}]", e)),
+                        latents: Vec::new(),
+                        participating_nodes: Vec::new(),
+                        latency_ms: start.elapsed().as_millis() as u64,
+                    }
+                }
+            }
+        } else {
+            // No backend - return queued message
+            InferenceResponse {
+                id: request_id,
+                text: Some(format!("[Inference queued: {} tokens requested]", req.max_tokens)),
+                latents: Vec::new(),
+                participating_nodes: Vec::new(),
+                latency_ms: start.elapsed().as_millis() as u64,
+            }
+        }
+    };
+
     let mut status = state.status.write().await;
     status.inference_count += 1;
     
-    // Extract layer info for response
-    let latent_info = req.layer_idx.map(|layer_idx| {
-        LatentInfo {
-            dim: 6144,
-            layer_idx,
-            preview: (0..64).map(|i| (i as f32 * 0.1).sin()).collect(),
-        }
+    // Extract latent info if present
+    let latent_info = response.latents.first().map(|latent| LatentInfo {
+        dim: latent.data.len(),
+        layer_idx: latent.layer_idx,
+        preview: latent.data.iter().take(64).copied().collect(),
     });
     
+    let text = response.text.unwrap_or_default();
+    let tokens_generated = text.len();
     let latency_ms = start.elapsed().as_millis() as u64;
-    let nodes = vec![status.node_id.to_string()];
+    let nodes = response.participating_nodes.iter().map(|n| n.to_string()).collect();
     
     Ok(Json(GenerateResponse {
-        text: format!("[Inference queued: {} tokens requested]", req.max_tokens),
-        tokens_generated: 0,
+        text,
+        tokens_generated,
         latency_ms,
         nodes_used: nodes,
         latent: latent_info,
@@ -452,22 +483,48 @@ async fn generate(
 }
 
 async fn latent_explore(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(req): Json<LatentExploreRequest>,
 ) -> Json<LatentExploreResponse> {
     info!("Latent explore: '{}' at layer {}", req.prompt, req.layer_idx);
 
-    // Placeholder: return a random latent preview
-    let preview: Vec<f32> = (0..256).map(|i| (i as f32 * 0.01).sin()).collect();
+    // Try to extract real latent if service available
+    let (dim, preview, morphed, similarity) = {
+        let service_guard = state.inference_service.read().await;
+        if let Some(service) = service_guard.as_ref() {
+            match service.extract_latent(&req.prompt, req.layer_idx).await {
+                Ok(latent) => {
+                    let dim = latent.data.len();
+                    let preview: Vec<f32> = latent.data.iter().take(256).copied().collect();
+                    
+                    // If morph requested, compute similarity
+                    let morphed_preview = req.morph_with.as_ref().map(|_morph_prompt| {
+                        // For now, return the same latent - morphing requires two latents
+                        preview.clone()
+                    });
+                    let similarity = req.morph_with.as_ref().map(|_| 1.0);
+                    
+                    (dim, preview, morphed_preview, similarity)
+                }
+                Err(e) => {
+                    warn!("Latent extraction error: {}", e);
+                    let preview: Vec<f32> = (0..256).map(|i| (i as f32 * 0.01).sin()).collect();
+                    (6144, preview, None, None)
+                }
+            }
+        } else {
+            // Placeholder: return a random latent preview
+            let preview: Vec<f32> = (0..256).map(|i| (i as f32 * 0.01).sin()).collect();
+            (6144, preview, None, None)
+        }
+    };
 
     Json(LatentExploreResponse {
-        dim: 6144,
+        dim,
         layer_idx: req.layer_idx,
         latent_preview: preview,
-        morphed_preview: req.morph_with.as_ref().map(|_| {
-            (0..256).map(|i| (i as f32 * 0.02).cos()).collect()
-        }),
-        similarity: req.morph_with.as_ref().map(|_| 0.72),
+        morphed_preview: morphed,
+        similarity,
     })
 }
 
@@ -599,6 +656,7 @@ mod tests {
             network_vram_mb: Arc::new(RwLock::new(0)),
             assigned_layers: Arc::new(RwLock::new("none".into())),
             assigned_experts: Arc::new(RwLock::new(Vec::new())),
+            inference_service: Arc::new(RwLock::new(None)),
         };
         
         assert_eq!(state.node_id, node_id);

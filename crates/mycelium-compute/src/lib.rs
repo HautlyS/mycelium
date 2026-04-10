@@ -39,7 +39,7 @@ pub enum LatentMode {
 
 /// Wrapper around quantized matmul with tracing.
 #[derive(Debug, Clone)]
-struct QMatMul {
+pub(crate) struct QMatMul {
     inner: candle_core::quantized::QMatMul,
 }
 
@@ -91,7 +91,7 @@ fn silu(xs: &Tensor) -> Result<Tensor> {
 // ─── Feed-Forward Network ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-struct Mlp {
+pub(crate) struct Mlp {
     feed_forward_w1: QMatMul,
     feed_forward_w2: QMatMul,
     feed_forward_w3: QMatMul,
