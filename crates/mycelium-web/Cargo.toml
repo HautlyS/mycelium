@@ -5,6 +5,9 @@ edition.workspace = true
 description = "WebAssembly entry point for Mycelium - browser-based P2P AI node"
 license.workspace = true
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

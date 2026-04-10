@@ -1,0 +1,17 @@
+{
+  "name": "mycelium-web",
+  "type": "module",
+  "description": "WebAssembly entry point for Mycelium - browser-based P2P AI node",
+  "version": "0.1.0",
+  "license": "AGPL-3.0",
+  "files": [
+    "mycelium_web_bg.wasm",
+    "mycelium_web.js",
+    "mycelium_web.d.ts"
+  ],
+  "main": "mycelium_web.js",
+  "types": "mycelium_web.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

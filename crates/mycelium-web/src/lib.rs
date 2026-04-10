@@ -549,6 +549,7 @@ impl MyceliumWeb {
         {
             let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("matmul_compute_pass"),
+                timestamp_writes: None,
             });
             compute_pass.set_pipeline(&pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
@@ -837,7 +838,10 @@ impl MyceliumWeb {
 
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor { label: Some("rmsnorm_encoder") });
         {
-            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("rmsnorm_compute_pass") });
+            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor { 
+                label: Some("rmsnorm_compute_pass"),
+                timestamp_writes: None,
+            });
             compute_pass.set_pipeline(&pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
             compute_pass.dispatch_workgroups((dim + 255) / 256, 1, 1);
