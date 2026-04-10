@@ -1,5 +1,18 @@
 # Mycelium — Decentralized P2P Self-Replicating AI
 
+**Join the network in 5 seconds flat:**
+
+```bash
+# Option 1: Browser (no install!)
+https://mycelium.ai/web
+
+# Option 2: One-line install
+curl -L mycelium.ai/install | bash
+
+# Option 3: Docker
+docker run -p 8080:8080 -p 4001:4001 ghcr.io/haultys/mycelium:latest
+```
+
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.75+-dea584.svg?style=flat&logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License">
@@ -162,36 +175,57 @@ cargo build --release --features cuda
 wasm-pack build --target web crates/mycelium-web
 ```
 
+### Quick Install (One Line)
+
+```bash
+# Install and run instantly
+curl -L https://github.com/HautlyS/mycelium/releases/latest/download/install.sh | bash
+
+# Or download the latest release
+# https://github.com/HautlyS/mycelium/releases/latest
+```
+
 ### Run
 
 ```bash
-# Start a node
-./target/release/mycelium-node --model minimax-m2.5-q4
+# Start a node (CPU mode, no model needed for P2P-only)
+./target/release/mycelium-node
 
-# Run as spore (minimal, accepts incoming)
+# Start with a model for inference
+./target/release/mycelium-node --model /path/to/model.gguf --tokenizer /path/to/tokenizer.json
+
+# Run as spore mode (minimal, auto-replicates)
 ./target/release/mycelium-node --spore-mode --listen 0.0.0.0:4001
 
-# API endpoints
-# POST /generate     - Generate text
-# GET  /latent      - Explore latent space
-# POST /tune        - Fine-tune LoRA
-# GET  /status      - Node status
-# GET  /health      - Health check
+# Connect to bootstrap peers
+./target/release/mycelium-node --bootstrap /ip4/1.2.3.4/tcp/4001/p2p/Qm...
+
+# Browser (WASM): https://mycelium.ai/web
+# Just open in browser - no install needed!
+```
+
+### API Endpoints
+
+```bash
+curl -X POST http://localhost:8080/generate -d '{"prompt": "Hello", "max_tokens": 32}'
+curl -X GET  http://localhost:8080/status
+curl -X GET  http://localhost:8080/health
 ```
 
 ## Status
 
-✅ **Implemented (v0.1.0):**
+✅ **Implemented (v0.2.0):**
 - P2P networking with Kademlia DHT + gossipsub
 - GGUF model loading via candle
 - Distributed tensor router with MoE support
-- Spore self-replication protocol
+- Pipeline parallelism with micro-batching
+- Continuous latent streaming with backpressure
+- Spore self-replication protocol (zstd + CRC32)
 - Federated LoRA with gradient bridge
 - REST API with WebSocket streaming
-
-🔄 **In Progress:**
-- Pipeline parallelism (async streaming)
 - WASM/WebGPU compilation
+- Latent memory store (persistent storage)
+- WebGPU matmul and RMSNorm shaders
 
 ## The Long-Term Vision
 
