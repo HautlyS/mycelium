@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mycelium-core",
+    "crates/mycelium-spore",
+    "crates/mycelium-hyphae",
+    "crates/mycelium-compute",
+    "crates/mycelium-nucleus",
+    "crates/mycelium-substrate",
+    "crates/mycelium-fruit",
+    "crates/mycelium-node",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0"
+repository = "https://github.com/mycelium-ai/mycelium"
+
+[workspace.dependencies]
+# Core
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+bytes = "1"
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+
+# P2P
+libp2p = { version = "0.54", features = [
+    "tokio", "noise", "tcp", "quic", "yamux",
+    "gossipsub", "kad", "identify", "ping", "relay",
+    "autonat", "dcutr", "macros",
+] }
+
+# ML / Compute
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
+wgpu = "24"
+bytemuck = "1"
+async-trait = "0.1"
+tokenizers = "0.21"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Internal crates
+mycelium-core = { path = "crates/mycelium-core" }
+mycelium-spore = { path = "crates/mycelium-spore" }
+mycelium-hyphae = { path = "crates/mycelium-hyphae" }
+mycelium-compute = { path = "crates/mycelium-compute" }
+mycelium-nucleus = { path = "crates/mycelium-nucleus" }
+mycelium-substrate = { path = "crates/mycelium-substrate" }
+mycelium-fruit = { path = "crates/mycelium-fruit" }
+
+[profile.release]
+lto = true
+opt-level = 3
+strip = true
