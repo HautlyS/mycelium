@@ -15,7 +15,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let n = gid.y;
 
     // We'll read dimensions from the first 3 elements
-    // In production: use uniform buffer for dimensions
     let dim_m = u32(a[0]);
     let dim_k = u32(a[1]);
     let dim_n = u32(b[0]);

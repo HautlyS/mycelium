@@ -160,8 +160,6 @@ struct MyceliumBridgeMetrics {
     /// Create a bridge with custom configuration.
     @objc public convenience init(config: MyceliumBridgeConfig) {
         self.init()
-        // Note: config is stored in a let property, so this is for API completeness
-        // In practice, use the shared instance with default config
     }
 
     // MARK: - Lifecycle

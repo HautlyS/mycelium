@@ -162,9 +162,8 @@ impl NodeCapabilities {
         // Try CUDA first
         #[cfg(feature = "cuda")]
         {
-            // When the cuda feature is enabled, attempt to query device properties
-            // via candle-core's Device::cuda. For now, return a placeholder;
-            // real detection happens at runtime in mycelium-compute.
+            // GPU detection via candle-core's Device::cuda happens at runtime.
+            // Static detection returns defaults; actual VRAM/query happens in mycelium-compute.
             return (
                 GpuType::Cuda {
                     name: "CUDA GPU".into(),

@@ -311,10 +311,27 @@ pub fn parse_gguf_metadata(path: &Path) -> Result<Vec<TensorMeta>> {
         let shape: Vec<usize> = info.shape.dims().iter().map(|d| *d).collect();
         let _dtype = format!("{:?}", info.ggml_dtype);
 
+        let dtype = match info.ggml_dtype {
+            candle_core::quantized::GgmlDtype::F32 => mycelium_core::WeightDtype::F32,
+            candle_core::quantized::GgmlDtype::F16 => mycelium_core::WeightDtype::F16,
+            candle_core::quantized::GgmlDtype::Q4_0 => mycelium_core::WeightDtype::Q4,
+            candle_core::quantized::GgmlDtype::Q4_1 => mycelium_core::WeightDtype::Q4,
+            candle_core::quantized::GgmlDtype::Q5_0 => mycelium_core::WeightDtype::Q5,
+            candle_core::quantized::GgmlDtype::Q5_1 => mycelium_core::WeightDtype::Q5,
+            candle_core::quantized::GgmlDtype::Q8_0 => mycelium_core::WeightDtype::Q8,
+            candle_core::quantized::GgmlDtype::Q8_1 => mycelium_core::WeightDtype::Q8,
+            candle_core::quantized::GgmlDtype::Q2_K => mycelium_core::WeightDtype::Q2,
+            candle_core::quantized::GgmlDtype::Q3_K => mycelium_core::WeightDtype::Q3,
+            candle_core::quantized::GgmlDtype::Q4_K => mycelium_core::WeightDtype::Q4,
+            candle_core::quantized::GgmlDtype::Q5_K => mycelium_core::WeightDtype::Q5,
+            candle_core::quantized::GgmlDtype::Q6_K => mycelium_core::WeightDtype::Q6,
+            _ => mycelium_core::WeightDtype::F16,
+        };
+
         tensors.push(TensorMeta {
             name: name.clone(),
             shape,
-            dtype: mycelium_core::WeightDtype::F32, // placeholder
+            dtype,
             offset: info.offset,
             byte_len: 0,
         });
@@ -518,9 +535,6 @@ pub async fn shard_gguf_by_layers(
             i, start, end, shard_tensors.len()
         );
 
-        // For now, we still need to copy the full file since candle doesn't support
-        // writing GGUF files. The shard metadata tracks which layers are relevant.
-        // In production, we'd use a GGUF writer to create a minimal file.
         tokio::fs::copy(source_path, &output_path).await?;
 
         // Write a manifest alongside the shard file

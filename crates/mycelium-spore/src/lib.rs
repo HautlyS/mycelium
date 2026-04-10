@@ -470,18 +470,16 @@ pub fn verify_spore_integrity(spore: &Spore) -> SporeIntegrity {
     let not_expired = is_not_expired(&spore.created_at);
     let generation_within_limits = spore.generation < 1000; // hard upper bound
 
-    let integrity = SporeIntegrity {
+    let mut integrity = SporeIntegrity {
         genome_valid,
         hash_matches,
         not_expired,
         generation_within_limits,
-        overall: false, // placeholder
+        overall: false,
     };
 
-    SporeIntegrity {
-        overall: integrity.compute_overall(),
-        ..integrity
-    }
+    integrity.overall = integrity.compute_overall();
+    integrity
 }
 
 /// Check if a spore is not expired based on its creation timestamp.

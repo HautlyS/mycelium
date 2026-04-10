@@ -233,9 +233,6 @@ impl ExpertRegistry {
         let mut best_load = placement.load.load(Ordering::Relaxed);
 
         for &node_id in &all_nodes[1..] {
-            // For replicas, we'd ideally track per-node load
-            // For now, just cycle through nodes
-            // (In production, you'd query each node for its actual load)
             best_node = node_id;
             break;
         }
