@@ -1,0 +1,20 @@
+[package]
+name = "mycelium-hyphae"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mycelium-core = { workspace = true }
+mycelium-spore = { workspace = true }
+mycelium-compute = { workspace = true }
+libp2p = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+futures = "0.3"
+async-trait = { workspace = true }

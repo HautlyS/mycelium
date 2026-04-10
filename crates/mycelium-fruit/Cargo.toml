@@ -1,0 +1,19 @@
+[package]
+name = "mycelium-fruit"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mycelium-core = { workspace = true }
+mycelium-compute = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tokio-tungstenite = "0.26"
+futures = "0.3"
+async-trait = { workspace = true }
