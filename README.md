@@ -4,10 +4,10 @@
 
 ```bash
 # Option 1: Browser (no install!)
-https://mycelium.ai/web
+https://HautlyS.github.io/mycelium
 
 # Option 2: One-line install
-curl -L mycelium.ai/install | bash
+curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bash
 
 # Option 3: Docker
 docker run -p 8080:8080 -p 4001:4001 ghcr.io/haultys/mycelium:latest
@@ -179,7 +179,7 @@ wasm-pack build --target web crates/mycelium-web
 
 ```bash
 # Install and run instantly
-curl -L https://github.com/HautlyS/mycelium/releases/latest/download/install.sh | bash
+curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bash
 
 # Or download the latest release
 # https://github.com/HautlyS/mycelium/releases/latest
@@ -200,7 +200,7 @@ curl -L https://github.com/HautlyS/mycelium/releases/latest/download/install.sh 
 # Connect to bootstrap peers
 ./target/release/mycelium-node --bootstrap /ip4/1.2.3.4/tcp/4001/p2p/Qm...
 
-# Browser (WASM): https://mycelium.ai/web
+# Browser (WASM): https://HautlyS.github.io/mycelium
 # Just open in browser - no install needed!
 ```
 

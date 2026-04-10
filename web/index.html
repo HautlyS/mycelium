@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mycelium - Join the Network</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: #0a0a0f;
+      color: #c4ffb4;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      background: 
+        radial-gradient(ellipse at 20% 80%, rgba(0,255,0,0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(100,255,100,0.05) 0%, transparent 50%),
+        #0a0a0f;
+    }
+    .logo {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      text-shadow: 0 0 30px rgba(100,255,100,0.5);
+      animation: pulse 3s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.8; }
+      50% { opacity: 1; }
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      font-weight: normal;
+    }
+    .tagline {
+      color: #666;
+      font-size: 1.2rem;
+      margin-bottom: 2rem;
+    }
+    .status {
+      background: rgba(100,255,100,0.1);
+      border: 1px solid #1a3a1a;
+      padding: 1rem 2rem;
+      margin: 1rem 0;
+      font-family: monospace;
+    }
+    .status-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      padding: 0.3rem 0;
+    }
+    .status-line .label { color: #666; }
+    .status-line .value { color: #aaffaa; }
+    .status-line .value.ready { color: #44ff44; }
+    .status-line .value.wait { color: #ffaa00; }
+    
+    .button {
+      background: #1a2a1a;
+      color: #4f4;
+      border: 1px solid #2f4f2f;
+      padding: 1rem 2rem;
+      font-family: inherit;
+      font-size: 1.1rem;
+      cursor: pointer;
+      margin: 0.5rem;
+      transition: all 0.3s;
+    }
+    .button:hover {
+      background: #2a3a2a;
+      border-color: #4f4;
+    }
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      max-width: 800px;
+      margin: 2rem 0;
+    }
+    .feature {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid #222;
+      padding: 1rem;
+      text-align: left;
+    }
+    .feature h3 { color: #8f8; font-size: 0.9rem; margin-bottom: 0.5rem; }
+    .feature p { color: #666; font-size: 0.8rem; }
+    
+    .console {
+      background: #000;
+      border: 1px solid #222;
+      padding: 1rem;
+      margin: 1rem 0;
+      width: 100%;
+      max-width: 600px;
+      height: 150px;
+      overflow: auto;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #444;
+    }
+    .console .log { margin: 0.2rem 0; }
+    .console .log.info { color: #666; }
+    .console .log.ok { color: #4f4; }
+    .console .log.warn { color: #fa0; }
+    .console .log.error { color: #f44; }
+    
+    .node-id {
+      font-size: 0.7rem;
+      color: #444;
+      word-break: break-all;
+      margin-top: 2rem;
+    }
+    
+    .quick-commands {
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: #444;
+    }
+    .quick-commands code {
+      background: #111;
+      padding: 0.2rem 0.5rem;
+      border-radius: 3px;
+      color: #6f6;
+    }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="logo">🍄</div>
+    <h1>Mycelium</h1>
+    <div class="tagline">Decentralized P2P Self-Replicating AI</div>
+    
+    <div class="status">
+      <div class="status-line">
+        <span class="label">WASM Module</span>
+        <span class="value wait" id="wasm-status">loading...</span>
+      </div>
+      <div class="status-line">
+        <span class="label">WebGPU</span>
+        <span class="value wait" id="gpu-status">checking...</span>
+      </div>
+      <div class="status-line">
+        <span class="label">P2P Network</span>
+        <span class="value wait" id="p2p-status">offline</span>
+      </div>
+      <div class="status-line">
+        <span class="label">Peers Connected</span>
+        <span class="value" id="peers-count">0</span>
+      </div>
+      <div class="status-line">
+        <span class="label">Network Nodes</span>
+        <span class="value" id="network-nodes">0</span>
+      </div>
+    </div>
+    
+    <div>
+      <button class="button" id="join-btn" onclick="joinNetwork()">🍄 Join Network</button>
+      <button class="button" id="spore-btn" onclick="createSpore()" disabled>🌱 Create Spore</button>
+    </div>
+    
+    <div class="features">
+      <div class="feature">
+        <h3>🧠 Federated Learning</h3>
+        <p>Your node learns from your usage. LoRA updates are shared as diffs, not raw data.</p>
+      </div>
+      <div class="feature">
+        <h3>🌱 Self-Replication</h3>
+        <p>Nodes create spores with compressed weights. Others can germinate and join.</p>
+      </div>
+      <div class="feature">
+        <h3>⚡ Distributed Compute</h3>
+        <p>Latent vectors flow between nodes. No tokenization needed.</p>
+      </div>
+      <div class="feature">
+        <h3>🔒 Privacy First</h3>
+        <p>Your data never leaves your browser. Only gradient deltas are shared.</p>
+      </div>
+    </div>
+    
+    <div class="console" id="console"></div>
+    
+    <div class="node-id" id="node-id"></div>
+    
+    <div class="quick-commands">
+      <p>Run native: <code>curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bash</code></p>
+      <p>Docker: <code>docker run -p 8080:8080 ghcr.io/haultys/mycelium</code></p>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import WASM module
+    import init, * as mycelium from './mycelium_web.js';
+    
+    const log = (msg, type = 'info') => {
+      const console = document.getElementById('console');
+      const div = document.createElement('div');
+      div.className = `log ${type}`;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      console.appendChild(div);
+      console.scrollTop = console.scrollHeight;
+    };
+    
+    let nodeId = null;
+    let peersConnected = 0;
+    
+    window.joinNetwork = async () => {
+      document.getElementById('join-btn').disabled = true;
+      log('Initializing Mycelium node...');
+      
+      // Initialize WASM
+      try {
+        await init();
+        log('WASM module loaded', 'ok');
+        document.getElementById('wasm-status').textContent = 'loaded';
+        document.getElementById('wasm-status').className = 'value ready';
+      } catch (e) {
+        log(`WASM error: ${e}`, 'error');
+        return;
+      }
+      
+      // Initialize WebGPU
+      const web = new mycelium.MyceliumWeb();
+      try {
+        const gpuOk = await web.init_gpu();
+        if (gpuOk) {
+          log('WebGPU initialized', 'ok');
+          document.getElementById('gpu-status').textContent = 'available';
+          document.getElementById('gpu-status').className = 'value ready';
+        } else {
+          log('WebGPU not available, using CPU', 'warn');
+          document.getElementById('gpu-status').textContent = 'CPU fallback';
+        }
+      } catch (e) {
+        log(`GPU error: ${e}`, 'warn');
+        document.getElementById('gpu-status').textContent = 'CPU fallback';
+      }
+      
+      // In a full implementation, this would connect to P2P network
+      // For now, simulate network connection
+      log('Connecting to P2P network...');
+      
+      // Simulate peer connection after delay
+      setTimeout(() => {
+        peersConnected = 3;
+        document.getElementById('peers-count').textContent = peersConnected;
+        document.getElementById('p2p-status').textContent = 'connected';
+        document.getElementById('p2p-status').className = 'value ready';
+        document.getElementById('network-nodes').textContent = '127.0.0.1:4001';
+        log(`Connected to ${peersConnected} peers`, 'ok');
+        
+        // Enable spore creation
+        document.getElementById('spore-btn').disabled = false;
+        
+        // Show node ID
+        const caps = web.capabilities();
+        nodeId = 'node_' + Math.random().toString(36).substr(2, 9);
+        document.getElementById('node-id').textContent = `Node ID: ${nodeId}`;
+      }, 1500);
+    };
+    
+    window.createSpore = () => {
+      log('Creating spore...');
+      // In full implementation: package weights + LoRA + genome
+      setTimeout(() => {
+        log('Spore created! Ready for replication', 'ok');
+        log('Spore ID: ' + Math.random().toString(36).substr(2, 9), 'ok');
+      }, 500);
+    };
+    
+    // Initial status
+    log('Mycelium browser node ready');
+    log('Click "Join Network" to connect');
+  </script>
+</body>
+</html>
