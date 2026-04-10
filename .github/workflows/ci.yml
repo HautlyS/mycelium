@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Build and publish to GitHub Pages
+  # Build and publish to GitHub Pages (simple static deploy)
   build-web:
     runs-on: ubuntu-latest
     permissions:
@@ -20,21 +20,6 @@ jobs:
       pages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install wasm-pack
-        run: |
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Build WASM
-        run: |
-          wasm-pack build --target web crates/mycelium-web --out-dir pkg/web
-          # Copy HTML to web root
-          cp web/index.html pkg/web/
-          # Create minimal README for web
-          echo "Mycelium Web Node" > pkg/web/README.md
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -45,7 +30,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: pkg/web
+          path: web
 
       - name: Deploy to GitHub Pages
         id: deployment

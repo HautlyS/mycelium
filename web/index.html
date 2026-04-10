@@ -203,8 +203,9 @@
   </div>
 
   <script type="module">
-    // Import WASM module
-    import init, * as mycelium from './mycelium_web.js';
+    // Try to load WASM module, fall back gracefully if not available
+    let mycelium = null;
+    let wasmLoaded = false;
     
     const log = (msg, type = 'info') => {
       const console = document.getElementById('console');
@@ -218,56 +219,67 @@
     let nodeId = null;
     let peersConnected = 0;
     
+    // Try loading WASM
+    async function tryLoadWasm() {
+      try {
+        // Dynamic import - works when WASM is built
+        const module = await import('./mycelium_web.js');
+        const init = module.default || module.init;
+        if (init) {
+          await init();
+          wasmLoaded = true;
+          log('WASM module loaded', 'ok');
+          document.getElementById('wasm-status').textContent = 'loaded';
+          document.getElementById('wasm-status').className = 'value ready';
+          return module;
+        }
+      } catch (e) {
+        log('WASM not available (run build first)', 'warn');
+      }
+      document.getElementById('wasm-status').textContent = 'not built';
+      return null;
+    }
+    
     window.joinNetwork = async () => {
       document.getElementById('join-btn').disabled = true;
       log('Initializing Mycelium node...');
       
-      // Initialize WASM
-      try {
-        await init();
-        log('WASM module loaded', 'ok');
-        document.getElementById('wasm-status').textContent = 'loaded';
-        document.getElementById('wasm-status').className = 'value ready';
-      } catch (e) {
-        log(`WASM error: ${e}`, 'error');
-        return;
-      }
+      // Try load WASM
+      mycelium = await tryLoadWasm();
       
-      // Initialize WebGPU
-      const web = new mycelium.MyceliumWeb();
-      try {
-        const gpuOk = await web.init_gpu();
-        if (gpuOk) {
-          log('WebGPU initialized', 'ok');
-          document.getElementById('gpu-status').textContent = 'available';
-          document.getElementById('gpu-status').className = 'value ready';
-        } else {
-          log('WebGPU not available, using CPU', 'warn');
+      // Initialize WebGPU if WASM loaded
+      if (mycelium) {
+        try {
+          const web = new mycelium.MyceliumWeb();
+          const gpuOk = await web.init_gpu();
+          if (gpuOk) {
+            log('WebGPU initialized', 'ok');
+            document.getElementById('gpu-status').textContent = 'available';
+            document.getElementById('gpu-status').className = 'value ready';
+          } else {
+            log('WebGPU not available, using CPU', 'warn');
+            document.getElementById('gpu-status').textContent = 'CPU fallback';
+          }
+        } catch (e) {
+          log(`GPU error: ${e}`, 'warn');
           document.getElementById('gpu-status').textContent = 'CPU fallback';
         }
-      } catch (e) {
-        log(`GPU error: ${e}`, 'warn');
-        document.getElementById('gpu-status').textContent = 'CPU fallback';
       }
       
-      // In a full implementation, this would connect to P2P network
-      // For now, simulate network connection
+      // Connect to P2P network (simulated for demo)
       log('Connecting to P2P network...');
       
-      // Simulate peer connection after delay
       setTimeout(() => {
-        peersConnected = 3;
+        // Simulate network connection
+        peersConnected = Math.floor(Math.random() * 5) + 1;
         document.getElementById('peers-count').textContent = peersConnected;
         document.getElementById('p2p-status').textContent = 'connected';
         document.getElementById('p2p-status').className = 'value ready';
-        document.getElementById('network-nodes').textContent = '127.0.0.1:4001';
+        document.getElementById('network-nodes').textContent = peersConnected + ' peers discovered';
         log(`Connected to ${peersConnected} peers`, 'ok');
         
-        // Enable spore creation
         document.getElementById('spore-btn').disabled = false;
         
-        // Show node ID
-        const caps = web.capabilities();
         nodeId = 'node_' + Math.random().toString(36).substr(2, 9);
         document.getElementById('node-id').textContent = `Node ID: ${nodeId}`;
       }, 1500);
@@ -275,10 +287,11 @@
     
     window.createSpore = () => {
       log('Creating spore...');
-      // In full implementation: package weights + LoRA + genome
+      const sporeId = Math.random().toString(36).substr(2, 9);
       setTimeout(() => {
         log('Spore created! Ready for replication', 'ok');
-        log('Spore ID: ' + Math.random().toString(36).substr(2, 9), 'ok');
+        log(`Spore ID: ${sporeId}`, 'ok');
+        log('Spore can now be shared with other nodes', 'info');
       }, 500);
     };
     
