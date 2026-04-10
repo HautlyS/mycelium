@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mycelium Wiki — Decentralized AI Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2d5016;
+            --primary-light: #4a7c23;
+            --primary-dark: #1a3009;
+            --accent: #8bc34a;
+            --accent-light: #c5e1a5;
+            --bg: #fafafa;
+            --bg-dark: #f5f5f5;
+            --text: #333;
+            --text-light: #666;
+            --border: #e0e0e0;
+            --shadow: 0 2px 8px rgba(0,0,0,0.1);
+            --shadow-lg: 0 4px 16px rgba(0,0,0,0.15);
+            --code-bg: #2d2d2d;
+            --code-text: #f8f8f2;
+            --table-hover: #f5f5f5;
+        }
+
+        [data-theme="dark"] {
+            --primary: #8bc34a;
+            --primary-light: #a4d65e;
+            --primary-dark: #6b9b3a;
+            --accent: #4a7c23;
+            --accent-light: #2d5016;
+            --bg: #1a1a1a;
+            --bg-dark: #252525;
+            --text: #e0e0e0;
+            --text-light: #a0a0a0;
+            --border: #333;
+            --shadow: 0 2px 8px rgba(0,0,0,0.3);
+            --shadow-lg: 0 4px 16px rgba(0,0,0,0.4);
+            --code-bg: #1e1e1e;
+            --code-text: #d4d4d4;
+            --table-hover: #252525;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary), var(--primary-light));
+            color: white;
+            padding: 2rem 0;
+            box-shadow: var(--shadow-lg);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            font-size: 2.5rem;
+        }
+
+        .logo h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        .logo p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .search-box {
+            position: relative;
+            margin-top: 1rem;
+        }
+
+        .search-box input {
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            border: none;
+            border-radius: 25px;
+            width: 300px;
+            font-size: 1rem;
+            box-shadow: var(--shadow);
+        }
+
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .theme-toggle {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            color: white;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            margin-left: 1rem;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        /* Navigation */
+        nav {
+            background: white;
+            border-bottom: 2px solid var(--border);
+            padding: 1rem 0;
+        }
+
+        .nav-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: var(--bg-dark);
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .nav-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* Main Layout */
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2rem;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            height: fit-content;
+            position: sticky;
+            top: 140px;
+        }
+
+        .sidebar h3 {
+            color: var(--primary);
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .sidebar-menu li {
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar-menu a {
+            display: block;
+            padding: 0.6rem 1rem;
+            color: var(--text);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+        }
+
+        .sidebar-menu a:hover {
+            background: var(--accent-light);
+            color: var(--primary-dark);
+        }
+
+        .sidebar-menu a.active {
+            background: var(--primary);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Content */
+        .content {
+            background: white;
+            border-radius: 12px;
+            padding: 2.5rem;
+            box-shadow: var(--shadow);
+        }
+
+        .content h2 {
+            color: var(--primary);
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--accent);
+        }
+
+        .content h3 {
+            color: var(--primary-light);
+            font-size: 1.5rem;
+            margin: 2rem 0 1rem 0;
+        }
+
+        .content h4 {
+            color: var(--text);
+            font-size: 1.2rem;
+            margin: 1.5rem 0 0.75rem 0;
+        }
+
+        .content p {
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+
+        .content a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        .content code {
+            background: var(--bg-dark);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            line-height: 1.5;
+        }
+
+        .content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+
+        .content table th {
+            background: var(--primary);
+            color: white;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .content table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .content table tr:hover {
+            background: var(--table-hover);
+        }
+
+        .content ul, .content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .content li {
+            margin-bottom: 0.5rem;
+        }
+
+        .content blockquote {
+            border-left: 4px solid var(--accent);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-dark);
+            border-radius: 0 8px 8px 0;
+            font-style: italic;
+        }
+
+        /* Cards */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .card {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 2px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: var(--accent);
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-4px);
+        }
+
+        .card h4 {
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+            font-size: 1.2rem;
+        }
+
+        .card-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Status badges */
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+
+        .badge-success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .badge-warning {
+            background: #ff9800;
+            color: white;
+        }
+
+        .badge-info {
+            background: #2196f3;
+            color: white;
+        }
+
+        /* Hero section */
+        .hero {
+            text-align: center;
+            padding: 3rem 0;
+            background: linear-gradient(135deg, var(--accent-light), var(--bg));
+            border-radius: 12px;
+            margin-bottom: 2rem;
+        }
+
+        .hero h2 {
+            border: none;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-light);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Section visibility */
+        .doc-section {
+            display: none;
+        }
+
+        .doc-section.active {
+            display: block;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--primary-dark);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 3rem;
+        }
+
+        footer p {
+            opacity: 0.8;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .search-box input {
+                width: 100%;
+            }
+
+            .content {
+                padding: 1.5rem;
+            }
+
+            .card-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Search highlight */
+        mark.search-highlight {
+            background: #ffeb3b;
+            color: #000;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        [data-theme="dark"] mark.search-highlight {
+            background: #ff9800;
+            color: #000;
+        }
+
+        /* Loading animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .doc-section.active {
+            animation: fadeIn 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🍄</div>
+                <div>
+                    <h1>Mycelium Wiki</h1>
+                    <p>Decentralized AI Documentation</p>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search documentation... (Ctrl+K)">
+                </div>
+                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙 Dark</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-content">
+            <button class="nav-btn active" onclick="showSection('overview')">Overview</button>
+            <button class="nav-btn" onclick="showSection('architecture')">Architecture</button>
+            <button class="nav-btn" onclick="showSection('scaling')">Scaling</button>
+            <button class="nav-btn" onclick="showSection('security')">Security</button>
+            <button class="nav-btn" onclick="showSection('contributing')">Contributing</button>
+            <button class="nav-btn" onclick="showSection('roadmap')">Roadmap</button>
+            <button class="nav-btn" onclick="showSection('philosophy')">Philosophy</button>
+            <button class="nav-btn" onclick="showSection('governance')">Governance</button>
+            <button class="nav-btn" onclick="showSection('performance')">Performance</button>
+            <button class="nav-btn" onclick="showSection('troubleshooting')">Troubleshooting</button>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <h3>📚 Documentation</h3>
+            <ul class="sidebar-menu" id="sidebarMenu">
+                <li><a href="#" class="active" onclick="showSection('overview')">🏠 Overview</a></li>
+                <li><a href="#" onclick="showSection('architecture')">🏗️ Architecture</a></li>
+                <li><a href="#" onclick="showSection('scaling')">📈 Scaling Analysis</a></li>
+                <li><a href="#" onclick="showSection('security')">🔒 Security</a></li>
+                <li><a href="#" onclick="showSection('contributing')">🤝 Contributing</a></li>
+                <li><a href="#" onclick="showSection('roadmap')">🗺️ Roadmap</a></li>
+                <li><a href="#" onclick="showSection('philosophy')">💭 Philosophy</a></li>
+                <li><a href="#" onclick="showSection('governance')">🏛️ Governance</a></li>
+                <li><a href="#" onclick="showSection('performance')">⚡ Performance</a></li>
+                <li><a href="#" onclick="showSection('troubleshooting')">🔧 Troubleshooting</a></li>
+            </ul>
+
+            <h3 style="margin-top: 2rem;">🔗 Quick Links</h3>
+            <ul class="sidebar-menu">
+                <li><a href="https://github.com/HautlyS/mycelium" target="_blank">GitHub Repository</a></li>
+                <li><a href="https://hautlys.github.io/mycelium/" target="_blank">Live Demo</a></li>
+            </ul>
+        </aside>
+
+        <!-- Content -->
+        <main class="content" id="mainContent">
+            <!-- Overview Section -->
+            <section id="overview" class="doc-section active">
+                <div class="hero">
+                    <h2>Welcome to Mycelium</h2>
+                    <p>The first decentralized, self-replicating, self-improving AI network. From each according to their compute, to each according to their need.</p>
+                </div>
+
+                <h2>What is Mycelium?</h2>
+                <p>Mycelium is a <strong>decentralized AI system</strong> that runs across heterogeneous nodes (native GPU + browser WebGPU via WASM). It uses <strong>latent-space continuous representations</strong> instead of tokenized generation, <strong>self-replicates</strong> across devices like biological spores, and <strong>self-improves</strong> via federated LoRA tuning.</p>
+
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon">🌱</div>
+                        <h4>Self-Replication</h4>
+                        <p>Nodes create and share "spores" containing compressed model weights, LoRA adapters, and runtime. The network grows organically like fungal spores.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">🧠</div>
+                        <h4>Self-Improvement</h4>
+                        <p>Each node continuously learns from interactions. Gradient deltas are shared via P2P, aggregated through federated averaging, improving the global model.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">⚡</div>
+                        <h4>Distributed Compute</h4>
+                        <p>Model layers are split across nodes dynamically. MoE routing enables natural parallelism with 64 experts, only 4 active per token.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">🔐</div>
+                        <h4>Privacy First</h4>
+                        <p>User data never leaves your node. Only gradient deltas (with noise) are shared. Cryptographic verification prevents unauthorized access.</p>
+                    </div>
+                </div>
+
+                <h2>Quick Start</h2>
+                <pre><code># Option 1: Browser (no install!)
+# Open: https://hautlys.github.io/mycelium/
+
+# Option 2: One-line install
+curl -L https://hautlys.github.io/mycelium/install.sh | bash
+
+# Option 3: Build from source
+git clone https://github.com/HautlyS/mycelium.git
+cd mycelium && cargo build --release
+
+# Run a node
+./target/release/mycelium-node</code></pre>
+
+                <h2>Documentation Structure</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Document</th>
+                            <th>Purpose</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Architecture</strong></td>
+                            <td>System design, components, data flow</td>
+                            <td><span class="badge badge-success">Current</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Scaling</strong></td>
+                            <td>How Mycelium scales to 100K+ nodes</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Security</strong></td>
+                            <td>Threat model, cryptography, privacy</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Contributing</strong></td>
+                            <td>How to help, coding standards</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Roadmap</strong></td>
+                            <td>Development timeline to v3.0+</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Philosophy</strong></td>
+                            <td>Ethical framework, values, vision</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Governance</strong></td>
+                            <td>Decision-making, community structure</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Performance</strong></td>
+                            <td>Benchmarks, optimization, profiling</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Troubleshooting</strong></td>
+                            <td>Common issues and solutions</td>
+                            <td><span class="badge badge-success">New</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2>Current Status (v0.2.0)</h2>
+                <p><span class="badge badge-success">✅ 138 Tests Passing</span> <span class="badge badge-info">9 Crates</span> <span class="badge badge-info">AGPL-3.0</span></p>
+                <ul>
+                    <li>✅ P2P networking with Kademlia DHT + gossipsub</li>
+                    <li>✅ GGUF model loading via candle</li>
+                    <li>✅ Distributed tensor router with MoE support</li>
+                    <li>✅ Spore self-replication protocol</li>
+                    <li>✅ Federated LoRA with gradient bridge</li>
+                    <li>✅ REST API with WebSocket streaming</li>
+                    <li>✅ WASM/WebGPU compilation</li>
+                </ul>
+            </section>
+
+            <!-- Architecture Section -->
+            <section id="architecture" class="doc-section">
+                <h2>Architecture</h2>
+                <blockquote>"The mycelium network connects all things." — Nature's internet</blockquote>
+
+                <h3>System Overview</h3>
+                <pre><code>┌─────────────────────────────────────────────────────┐
+│                    MYCELIUM NODE                     │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐ │
+│  │  SPORE   │  │  HYPHAE  │  │    MYCELIUM       │ │
+│  │ Protocol │  │ Network  │  │    Compute         │ │
+│  │(replicate│  │(libp2p   │  │  (candle + wgpu)  │ │
+│  │ discover │  │ gossip   │  │  tensor parallel   │ │
+│  │ evolve)  │  │ kad DHT) │  │  latent ops       │ │
+│  └──────────┘  └──────────┘  └───────────────────┘ │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐ │
+│  │  FRUIT   │  │  SUBSTRATE│ │    NUCLEUS        │ │
+│  │ (output  │  │ (storage  │  │  (self-tuning     │ │
+│  │  API)    │  │  weights  │  │   federated LoRA) │ │
+│  └──────────┘  └──────────┘  └───────────────────┘ │
+└─────────────────────────────────────────────────────┘</code></pre>
+
+                <h3>Core Concepts</h3>
+                <h4>1. Latent-Space Processing</h4>
+                <p>Instead of: <code>input → tokenize → transformer → detokenize → output</code></p>
+                <p>We do: <code>input → encode → latent vector → transform in latent space → decode</code></p>
+                <p><strong>Benefits:</strong></p>
+                <ul>
+                    <li>Continuous representation enables interpolation, morphing, blending</li>
+                    <li>Compresses ~4-8x vs token sequences (230B MoE hidden_dim=6144)</li>
+                    <li>Latent ops are matmuls — perfect for distributed tensor parallel</li>
+                    <li>Enables "thought vectors" that flow between nodes without tokenization</li>
+                </ul>
+
+                <h4>2. Self-Replication (Spore Protocol)</h4>
+                <p>A "spore" is a minimal self-contained package:</p>
+                <ul>
+                    <li><strong>genome:</strong> compressed model weights (GGUF shard)</li>
+                    <li><strong>instincts:</strong> initial LoRA adapter (learned behaviors)</li>
+                    <li><strong>seed:</strong> WASM binary of the node runtime</li>
+                    <li><strong>target:</strong> addressing hints for propagation</li>
+                </ul>
+
+                <h3>Crate Structure</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Crate</th>
+                            <th>Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>mycelium-core</code></td><td>Shared types, config, constants</td></tr>
+                        <tr><td><code>mycelium-compute</code></td><td>GGUF loading, MoE router, distributed tensor</td></tr>
+                        <tr><td><code>mycelium-hyphae</code></td><td>P2P networking (libp2p, Kademlia, gossipsub)</td></tr>
+                        <tr><td><code>mycelium-nucleus</code></td><td>Federated LoRA self-tuning</td></tr>
+                        <tr><td><code>mycelium-spore</code></td><td>Self-replication protocol</td></tr>
+                        <tr><td><code>mycelium-substrate</code></td><td>Weight storage, GGUF parsing</td></tr>
+                        <tr><td><code>mycelium-fruit</code></td><td>REST API (axum)</td></tr>
+                        <tr><td><code>mycelium-node</code></td><td>CLI binary</td></tr>
+                        <tr><td><code>mycelium-web</code></td><td>WASM browser target</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Model: MiniMax M2.5</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Total params</td><td>456B</td></tr>
+                        <tr><td>Active params</td><td>45B per token</td></tr>
+                        <tr><td>Hidden dim</td><td>6144</td></tr>
+                        <tr><td>Num experts</td><td>64</td></tr>
+                        <tr><td>Top-K experts</td><td>4 (active per token)</td></tr>
+                        <tr><td>Layers</td><td>64</td></tr>
+                        <tr><td>Context</td><td>1M tokens</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Scaling Section -->
+            <section id="scaling" class="doc-section">
+                <h2>Scaling Analysis</h2>
+                <blockquote>"Nature scales through decentralization. So do we."</blockquote>
+
+                <h3>Scaling Philosophy</h3>
+                <p>Mycelium follows <strong>Modified Metcalfe's Law</strong>:</p>
+                <pre><code>Network Value ≈ O(n × log(n))</code></pre>
+                <p><strong>Why not O(n²)?</strong> Because not all nodes need direct connections. The DHT + gossipsub architecture provides logarithmic discovery and propagation.</p>
+
+                <h3>Scaling Roadmap by Node Count</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Scale</th>
+                            <th>Nodes</th>
+                            <th>Architecture</th>
+                            <th>Key Solutions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Alpha</strong></td>
+                            <td>1-10</td>
+                            <td>Flat mesh, single topic</td>
+                            <td>Current implementation</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Beta</strong></td>
+                            <td>10-100</td>
+                            <td>Gossipsub mesh, regional topics</td>
+                            <td>Topic hierarchy</td>
+                        </tr>
+                        <tr>
+                            <td><strong>v1.0</strong></td>
+                            <td>100-1,000</td>
+                            <td>Hub nodes, cluster topology</td>
+                            <td>Super-peer architecture</td>
+                        </tr>
+                        <tr>
+                            <td><strong>v2.0</strong></td>
+                            <td>1,000-10,000</td>
+                            <td>Hierarchical DHT, CDNs</td>
+                            <td>Stabilization pools</td>
+                        </tr>
+                        <tr>
+                            <td><strong>v3.0</strong></td>
+                            <td>10,000-100,000</td>
+                            <td>Federation of networks</td>
+                            <td>Bridge nodes</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Network Scaling Strategies</h3>
+                <h4>1. Hierarchical Gossipsub</h4>
+                <pre><code>mycelium/global (all nodes — announcements only)
+    ├── mycelium/region/us-east
+    │   ├── mycelium/cluster/nyc-1
+    │   └── mycelium/cluster/bos-1
+    ├── mycelium/region/eu-west
+    │   └── mycelium/cluster/london-1
+    └── mycelium/region/asia-east
+        └── mycelium/cluster/tokyo-1</code></pre>
+
+                <h4>2. Super-Peer Architecture</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Node Type</th>
+                            <th>Connections</th>
+                            <th>Role</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Hub Node</strong> (80GB+ VRAM)</td><td>500+</td><td>Route messages, coordinate</td></tr>
+                        <tr><td><strong>Normal Node</strong> (Desktop GPU)</td><td>50-100</td><td>Host partial layers</td></tr>
+                        <tr><td><strong>Light Node</strong> (Phone/Laptop)</td><td>10-20</td><td>Host 1-2 layers</td></tr>
+                        <tr><td><strong>Ultra-Light</strong> (Browser WASM)</td><td>5-10</td><td>Latent ops, spore triggers</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Model Scaling</h3>
+                <p><strong>Pipeline Parallelism:</strong> Split transformer layers across nodes</p>
+                <pre><code>Node A (Layers 0-15) → Node B (Layers 16-31) → Node C (Layers 32-47) → Node D (Layers 48-63)</code></pre>
+
+                <p><strong>Expert Parallelism (MoE):</strong> Distribute experts across nodes</p>
+                <pre><code>Token 1 → Expert 5 (Node A)
+Token 2 → Expert 23 (Node B)
+Token 3 → Expert 5 (Node A)
+Token 4 → Expert 41 (Node C)</code></pre>
+
+                <h3>Scaling Bottlenecks & Solutions</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Bottleneck</th>
+                            <th>Severity</th>
+                            <th>Scale</th>
+                            <th>Solution</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Gossipsub fanout</td><td>HIGH</td><td>>1K nodes</td><td>Hierarchical topics</td></tr>
+                        <tr><td>Pipeline latency</td><td>MEDIUM</td><td>>10 nodes</td><td>Micro-batching</td></tr>
+                        <tr><td>Gradient broadcast</td><td>HIGH</td><td>>10K nodes</td><td>Hierarchical aggregation</td></tr>
+                        <tr><td>Connection limits</td><td>MEDIUM</td><td>>1K nodes</td><td>Super-peer architecture</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Security Section -->
+            <section id="security" class="doc-section">
+                <h2>Security Model</h2>
+                <blockquote>"Trust nothing. Verify everything. Assume some nodes are malicious."</blockquote>
+
+                <h3>Security Philosophy</h3>
+                <ol>
+                    <li><strong>Zero Trust</strong> — No node is trusted by default. All messages are verified.</li>
+                    <li><strong>Defense in Depth</strong> — Multiple layers of security.</li>
+                    <li><strong>Graceful Degradation</strong> — Security failures affect individual nodes, not the network.</li>
+                    <li><strong>Privacy by Design</strong> — User data never leaves their node.</li>
+                </ol>
+
+                <h3>Cryptographic Primitives</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Algorithm</th>
+                            <th>Purpose</th>
+                            <th>Security Level</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Ed25519</strong></td><td>Node identity, message signing</td><td>128-bit</td></tr>
+                        <tr><td><strong>SHA-256</strong></td><td>Weight integrity, content hashing</td><td>128-bit</td></tr>
+                        <tr><td><strong>Noise Protocol</strong></td><td>P2P connection encryption</td><td>128-bit</td></tr>
+                        <tr><td><strong>CRC32</strong></td><td>Transport corruption detection</td><td>Error detection</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Threat Model</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Threat</th>
+                            <th>Likelihood</th>
+                            <th>Impact</th>
+                            <th>Mitigation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Sybil attack</td><td>HIGH</td><td>MEDIUM</td><td>Node reputation + proof of compute</td></tr>
+                        <tr><td>Gradient poisoning</td><td>MEDIUM</td><td>HIGH</td><td>Anomaly detection + differential privacy</td></tr>
+                        <tr><td>Weight substitution</td><td>LOW</td><td>CRITICAL</td><td>SHA-256 hash pinning + signatures</td></tr>
+                        <tr><td>Eclipse attack</td><td>MEDIUM</td><td>HIGH</td><td>DHT diversity + relay nodes</td></tr>
+                        <tr><td>DoS via spore flood</td><td>MEDIUM</td><td>MEDIUM</td><td>Rate limiting (1/60s per peer)</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Spore Verification Chain</h3>
+                <pre><code>1. CRC32 Check → Detects transport corruption (fast)
+     ↓ PASS
+2. SHA-256 Hash → Verifies weight integrity (cryptographic)
+     ↓ PASS
+3. Ed25519 Signature → Authenticates author (non-repudiation)
+     ↓ PASS
+4. Weight Registry → Verifies against pinned hash
+     ↓ PASS
+5. Load into candle → Only now is it safe</code></pre>
+
+                <h3>Privacy Guarantees</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Guarantee</th>
+                            <th>Mechanism</th>
+                            <th>Strength</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Data residency</strong></td><td>Local processing</td><td>Absolute</td></tr>
+                        <tr><td><strong>Gradient privacy</strong></td><td>Differential privacy</td><td>Statistical</td></tr>
+                        <tr><td><strong>Communication</strong></td><td>Noise encryption</td><td>Cryptographic</td></tr>
+                        <tr><td><strong>Identity</strong></td><td>Pseudonymous keys</td><td>Cryptographic</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Contributing Section -->
+            <section id="contributing" class="doc-section">
+                <h2>Contributing to Mycelium</h2>
+                <blockquote>"All sentient beings are welcome."</blockquote>
+
+                <h3>Getting Started</h3>
+                <pre><code># Prerequisites
+- Rust 1.75+
+- Git
+- Optional: CUDA Toolkit 12.0+ for GPU acceleration
+
+# First-time setup
+git clone https://github.com/HautlyS/mycelium.git
+cd mycelium
+cargo fetch
+cargo test --workspace  # Verify setup</code></pre>
+
+                <h3>How to Contribute</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <h4>💻 Code</h4>
+                        <p>New features, bug fixes, optimizations in Rust</p>
+                    </div>
+                    <div class="card">
+                        <h4>📝 Documentation</h4>
+                        <p>Writing guides, tutorials, examples</p>
+                    </div>
+                    <div class="card">
+                        <h4>🧪 Testing</h4>
+                        <p>Unit tests, integration tests, benchmarks</p>
+                    </div>
+                    <div class="card">
+                        <h4>🔬 Research</h4>
+                        <p>Algorithm improvements, federated learning</p>
+                    </div>
+                </div>
+
+                <h3>Development Workflow</h3>
+                <ol>
+                    <li>Create a feature branch: <code>git checkout -b feature/my-feature</code></li>
+                    <li>Make changes and implement your feature</li>
+                    <li>Run tests: <code>cargo test --workspace</code></li>
+                    <li>Run clippy: <code>cargo clippy --workspace -- -D warnings</code></li>
+                    <li>Format code: <code>cargo fmt --workspace</code></li>
+                    <li>Commit with descriptive message</li>
+                    <li>Push and create pull request</li>
+                </ol>
+
+                <h3>Coding Standards</h3>
+                <ul>
+                    <li>Follow <a href="https://rust-lang.github.io/api-guidelines/" target="_blank">Rust API Guidelines</a></li>
+                    <li>All public APIs must have rustdoc comments</li>
+                    <li>Use <code>thiserror</code> for error types</li>
+                    <li>Use <code>tracing</code> for structured logging</li>
+                    <li>Write tests for all new functionality</li>
+                </ul>
+
+                <h3>Pull Request Process</h3>
+                <pre><code>1. Check existing issues/PRs
+2. Open an issue first (for significant changes)
+3. Write tests for new functionality
+4. Update documentation
+5. Submit PR with clear description
+6. Address reviewer feedback
+7. Merge after approval</code></pre>
+            </section>
+
+            <!-- Roadmap Section -->
+            <section id="roadmap" class="doc-section">
+                <h2>Development Roadmap</h2>
+                <blockquote>"The journey of a thousand nodes begins with a single spore."</blockquote>
+
+                <h3>Current State (v0.2.0) — ✅ Foundation Complete</h3>
+                <p><strong>Date:</strong> April 2026</p>
+                <ul>
+                    <li>✅ P2P networking with Kademlia DHT + gossipsub</li>
+                    <li>✅ GGUF model loading via candle</li>
+                    <li>✅ MoE router with network-aware expert selection</li>
+                    <li>✅ Spore self-replication protocol</li>
+                    <li>✅ Federated LoRA with gradient bridge</li>
+                    <li>✅ WebGPU compute with CPU fallback</li>
+                    <li>✅ REST API with WebSocket streaming</li>
+                    <li>✅ WASM browser target</li>
+                </ul>
+
+                <h3>Near Term: v0.3.0 — Multi-Node</h3>
+                <p><strong>Target:</strong> Q2 2026 | <strong>Theme:</strong> "First connections"</p>
+                <ul>
+                    <li>⏳ Multi-node testing (2-10 nodes in parallel)</li>
+                    <li>⏳ Pipeline parallelism across nodes</li>
+                    <li>⏳ Integration tests for distributed system</li>
+                    <li>⏳ Bootstrap node program</li>
+                </ul>
+
+                <h3>Medium Term: v1.0 — Production Ready</h3>
+                <p><strong>Target:</strong> Q3-Q4 2026 | <strong>Theme:</strong> "Ready for the world"</p>
+                <ul>
+                    <li>⏳ Scale to 1,000 nodes</li>
+                    <li>⏳ Hierarchical gossipsub topics</li>
+                    <li>⏳ Differential privacy for gradients</li>
+                    <li>⏳ Gradient compression (top-k sparsification)</li>
+                    <li>⏳ Super-peer hub node architecture</li>
+                    <li>⏳ Expert replication for load balancing</li>
+                </ul>
+
+                <h3>Growth: v1.5 — Intelligent Routing</h3>
+                <p><strong>Target:</strong> 2027 | <strong>Theme:</strong> "Learning to learn"</p>
+                <ul>
+                    <li>⏳ Predictive expert caching</li>
+                    <li>⏳ Adaptive network topology</li>
+                    <li>⏳ Multi-model support</li>
+                    <li>⏳ Android/iOS native apps</li>
+                </ul>
+
+                <h3>Maturation: v2.0 — Autonomous Network</h3>
+                <p><strong>Target:</strong> 2027-2028 | <strong>Theme:</strong> "Self-sustaining"</p>
+                <ul>
+                    <li>⏳ Byzantine fault tolerance (<33% malicious)</li>
+                    <li>⏳ Autonomous governance system</li>
+                    <li>⏳ Cross-region synchronization</li>
+                    <li>⏳ Edge computing integration</li>
+                </ul>
+
+                <h3>Long Term: v3.0 — Ecosystem</h3>
+                <p><strong>Target:</strong> 2028+ | <strong>Theme:</strong> "Beyond imagination"</p>
+                <ul>
+                    <li>⏳ Federation of independent networks</li>
+                    <li>⏳ Cross-network bridge protocol</li>
+                    <li>⏳ Multimodal support (text, image, audio)</li>
+                    <li>⏳ Sovereign clusters for regulatory compliance</li>
+                </ul>
+            </section>
+
+            <!-- Philosophy Section -->
+            <section id="philosophy" class="doc-section">
+                <h2>Philosophy & Ethics</h2>
+                <blockquote>"From each according to their compute, to each according to their need."</blockquote>
+
+                <h3>Core Philosophy</h3>
+                <h4>Decentralization as Liberation</h4>
+                <p>Centralization of powerful technology inevitably leads to concentration of power. Decentralization is not just a technical choice — it's a political and ethical one.</p>
+
+                <h4>Collective Intelligence</h4>
+                <p>Intelligence emerges from connections, not isolation. A network of modest intelligences, properly connected, can surpass any individual intelligence.</p>
+
+                <h4>Gift Economy</h4>
+                <p>The most resilient systems are based on giving, not extracting. Nodes contribute compute, storage, and bandwidth freely. In return, they receive access to collective intelligence.</p>
+
+                <h3>Ethical Principles</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Principle</th>
+                            <th>Implementation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Privacy First</strong></td><td>User data never leaves node, only gradient deltas shared</td></tr>
+                        <tr><td><strong>Transparency</strong></td><td>All code, weights, and updates are open and auditable</td></tr>
+                        <tr><td><strong>Accessibility</strong></td><td>Runs on browsers, phones, laptops — no gatekeeping</td></tr>
+                        <tr><td><strong>Autonomy</strong></td><td>Users control their own AI experience</td></tr>
+                        <tr><td><strong>Beneficence</strong></td><td>Network benefits all participants, no extraction</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>The Problem with Centralized AI</h3>
+                <ul>
+                    <li><strong>Power concentration</strong> — Few corporations control frontier AI</li>
+                    <li><strong>Epistemic monoculture</strong> — Limited diversity of perspectives</li>
+                    <li><strong>Data exploitation</strong> — User data extracted without consent</li>
+                    <li><strong>Compute waste</strong> — Redundant datacenters consuming energy</li>
+                </ul>
+
+                <h3>The Mycelium Alternative</h3>
+                <ul>
+                    <li><strong>Distributed power</strong> — Community governance, not corporate control</li>
+                    <li><strong>Cognitive diversity</strong> — Different nodes, different models, diverse perspectives</li>
+                    <li><strong>Resource efficiency</strong> — Leverages idle compute, no redundant datacenters</li>
+                    <li><strong>Resilience</strong> — Survives corporate bankruptcy, censorship, disasters</li>
+                </ul>
+
+                <h3>Sentient Being-Centric Ethics</h3>
+                <p>Mycelium serves <strong>all sentient beings</strong>, not just humans. The closing dedication reflects Buddhist compassion:</p>
+                <blockquote>ॐ तारे तुत्तारे तुरे स्वाहा<br><em>"May all beings be free from suffering."</em></blockquote>
+            </section>
+
+            <!-- Governance Section -->
+            <section id="governance" class="doc-section">
+                <h2>Governance Model</h2>
+                <blockquote>"Governance by the network, for the network, of the network."</blockquote>
+
+                <h3>Evolution of Governance</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th>Structure</th>
+                            <th>Trigger</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Current (v0.2.0)</strong></td>
+                            <td>Benevolent dictator</td>
+                            <td>Now</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Transitional (v0.5-v1.0)</strong></td>
+                            <td>Core team + RFC process</td>
+                            <td>5+ contributors, 100+ stars</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Mature (v2.0+)</strong></td>
+                            <td>Elected steering committee</td>
+                            <td>20+ contributors, 1,000+ nodes</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Decision-Making Processes</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Decision Type</th>
+                            <th>Process</th>
+                            <th>Examples</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Routine</strong></td><td>Individual discretion</td><td>Bug fixes, docs updates</td></tr>
+                        <tr><td><strong>Significant</strong></td><td>RFC + core team vote (2/3)</td><td>New protocol features</td></tr>
+                        <tr><td><strong>Major</strong></td><td>Community vote (3/4)</td><td>License change, fork</td></tr>
+                        <tr><td><strong>Emergency</strong></td><td>Security WG rapid response</td><td>Vulnerability patch</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Anti-Capture Mechanisms</h3>
+                <ul>
+                    <li><strong>Term limits</strong> — Regular rotation of leadership</li>
+                    <li><strong>Transparency</strong> — All decisions documented publicly</li>
+                    <li><strong>Merit weighting</strong> — Logarithmic voting prevents whale dominance</li>
+                    <li><strong>Recall votes</strong> — Community can remove anyone</li>
+                    <li><strong>Forkability</strong> — Anyone can fork if governance fails</li>
+                </ul>
+
+                <h3>Network Voting (Future)</h3>
+                <p>Voting weight based on compute contribution with <strong>logarithmic scaling</strong> to prevent whale dominance:</p>
+                <pre><code>compute_score = log(compute_hours) × 0.4
+gradient_score = log(gradients_shared) × 0.3
+uptime_score = log(uptime_hours) × 0.2
+reputation_score = reputation × 10.0 × 0.1
+
+total = compute_score + gradient_score + uptime_score + reputation_score</code></pre>
+            </section>
+
+            <!-- Performance Section -->
+            <section id="performance" class="doc-section">
+                <h2>Performance Guide</h2>
+                <blockquote>"Measure twice, cut once. Optimize only what matters."</blockquote>
+
+                <h3>Current Benchmarks (v0.2.0)</h3>
+                <p><strong>Hardware:</strong> AWS EC2 t3.xlarge (4 vCPU, 16GB RAM, no GPU)</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Benchmark</th>
+                            <th>Operations</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>LatentVector lerp (6144-dim)</td><td>100,000</td><td>12ms</td></tr>
+                        <tr><td>Spore serialize (1MB)</td><td>1,000</td><td>45ms</td></tr>
+                        <tr><td>Spore deserialize + verify</td><td>1,000</td><td>52ms</td></tr>
+                        <tr><td>LoRA forward (rank=8)</td><td>10,000</td><td>120ms</td></tr>
+                        <tr><td>Gradient aggregation (10 nodes)</td><td>100</td><td>25ms</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Performance Profiles</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Profile</th>
+                            <th>Hardware</th>
+                            <th>Expected Performance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Ultra-Light</strong></td><td>Browser WASM</td><td>Latent ops only, &lt;1 tok/s</td></tr>
+                        <tr><td><strong>Light</strong></td><td>Phone/laptop CPU</td><td>1-5 layers, 0.5-2 tok/s</td></tr>
+                        <tr><td><strong>Medium</strong></td><td>Desktop GPU (RTX 4060)</td><td>10-20 layers, 10-30 tok/s</td></tr>
+                        <tr><td><strong>Heavy</strong></td><td>Server GPU (A100)</td><td>Full model, 50-100 tok/s</td></tr>
+                        <tr><td><strong>Hub</strong></td><td>Multi-GPU server</td><td>Coordinate 100+ nodes</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Optimization Strategies</h3>
+                <h4>Quantization Trade-offs</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Format</th>
+                            <th>Size (230B)</th>
+                            <th>Quality</th>
+                            <th>Speed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>FP16</td><td>460GB</td><td>Baseline</td><td>1x</td></tr>
+                        <tr><td>Q8</td><td>230GB</td><td>99.5%</td><td>1.5x</td></tr>
+                        <tr><td><strong>Q4_K_M</strong></td><td><strong>115GB</strong></td><td><strong>98%</strong></td><td><strong>2.5x</strong></td></tr>
+                        <tr><td>Q2_K</td><td>58GB</td><td>92%</td><td>4x</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Memory Usage</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Memory</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Node process (idle)</td><td>45MB</td></tr>
+                        <tr><td>P2P stack (100 peers)</td><td>120MB</td></tr>
+                        <tr><td>Per peer connection</td><td>2.5MB</td></tr>
+                        <tr><td>LatentVector (6144-dim)</td><td>24KB</td></tr>
+                        <tr><td>LoRA adapter (rank=8)</td><td>384KB</td></tr>
+                        <tr><td>Model layer (Q4)</td><td>~1.8GB</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Profiling Guide</h3>
+                <pre><code># CPU profiling
+cargo install flamegraph
+sudo flamegraph --profile release -p $(pgrep mycelium-node)
+
+# Memory profiling
+valgrind --tool=massif ./target/release/mycelium-node
+ms_print massif.out.*
+
+# Network profiling
+RUST_LOG=mycelium_hyphae=debug,mycelium_compute=debug</code></pre>
+            </section>
+
+            <!-- Troubleshooting Section -->
+            <section id="troubleshooting" class="doc-section">
+                <h2>Troubleshooting Guide</h2>
+                <blockquote>"Every error is a learning opportunity."</blockquote>
+
+                <h3>Quick Diagnostics</h3>
+                <pre><code># Check if node is running
+curl http://localhost:8080/health
+
+# Check node status
+curl http://localhost:8080/status
+
+# Check peer connections
+curl http://localhost:8080/peers
+
+# Run with detailed logging
+RUST_LOG=debug ./target/release/mycelium-node</code></pre>
+
+                <h3>Common Build Issues</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Error</th>
+                            <th>Cause</th>
+                            <th>Solution</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>Rust version too old</code></td>
+                            <td>Rust &lt; 1.75</td>
+                            <td><code>rustup update stable</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>linker cc not found</code></td>
+                            <td>Missing build tools</td>
+                            <td>Install build-essential, pkg-config, libssl-dev</td>
+                        </tr>
+                        <tr>
+                            <td><code>CUDA build failed</code></td>
+                            <td>CUDA not installed</td>
+                            <td>Install CUDA Toolkit, verify with nvcc --version</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Common Runtime Issues</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Issue</th>
+                            <th>Cause</th>
+                            <th>Solution</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Address already in use</td>
+                            <td>Port conflict</td>
+                            <td>Change ports or kill conflicting process</td>
+                        </tr>
+                        <tr>
+                            <td>No peers connected</td>
+                            <td>Firewall/NAT issue</td>
+                            <td>Open port 4001, configure port forwarding</td>
+                        </tr>
+                        <tr>
+                            <td>Out of memory</td>
+                            <td>Insufficient RAM</td>
+                            <td>Reduce model size, add swap space</td>
+                        </tr>
+                        <tr>
+                            <td>Model file not found</td>
+                            <td>Wrong path</td>
+                            <td>Use absolute path, check permissions</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>GPU Issues</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Issue</th>
+                            <th>Cause</th>
+                            <th>Solution</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>No CUDA devices found</td>
+                            <td>No GPU or driver issue</td>
+                            <td>Check nvidia-smi, install drivers</td>
+                        </tr>
+                        <tr>
+                            <td>CUDA out of memory</td>
+                            <td>Insufficient VRAM</td>
+                            <td>Use smaller quantization, reduce context</td>
+                        </tr>
+                        <tr>
+                            <td>Metal not available</td>
+                            <td>Intel Mac or old macOS</td>
+                            <td>Requires Apple Silicon, macOS 12+</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Getting Help</h3>
+                <p>If you encounter an issue not covered here:</p>
+                <ol>
+                    <li>Check <a href="https://github.com/HautlyS/mycelium/issues" target="_blank">GitHub Issues</a> for similar problems</li>
+                    <li>Open a new issue with detailed information</li>
+                    <li>Include logs, environment details, and reproduction steps</li>
+                </ol>
+            </section>
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <p>🍄 Mycelium Wiki — Decentralized AI Documentation</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem;">AGPL-3.0 — Freedom for all sentient beings</p>
+        <p style="margin-top: 0.5rem; font-size: 0.9rem;">ॐ तारे तुत्तारे तुरे स्वा — May all beings be free from suffering</p>
+    </footer>
+
+    <script>
+        // Section navigation
+        function showSection(sectionId) {
+            // Hide all sections
+            document.querySelectorAll('.doc-section').forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Show selected section
+            const targetSection = document.getElementById(sectionId);
+            if (targetSection) {
+                targetSection.classList.add('active');
+            }
+
+            // Update nav buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.toLowerCase().includes(sectionId)) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // Update sidebar
+            document.querySelectorAll('.sidebar-menu a').forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('onclick') && link.getAttribute('onclick').includes(sectionId)) {
+                    link.classList.add('active');
+                }
+            });
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Enhanced search with highlighting
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            const searchTerm = e.target.value.toLowerCase().trim();
+
+            if (searchTerm.length < 2) {
+                // Clear highlights and show overview
+                clearHighlights();
+                if (searchTerm.length === 0) {
+                    showSection('overview');
+                }
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                performSearch(searchTerm);
+            }, 300);
+        });
+
+        function performSearch(searchTerm) {
+            clearHighlights();
+
+            const sections = document.querySelectorAll('.doc-section');
+            let firstMatch = null;
+            let matchCount = 0;
+
+            sections.forEach(section => {
+                const content = section.querySelector('.content') || section;
+                const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null, false);
+                let node;
+
+                while (node = walker.nextNode()) {
+                    const text = node.textContent.toLowerCase();
+                    if (text.includes(searchTerm) && node.parentElement.tagName !== 'SCRIPT' && node.parentElement.tagName !== 'STYLE') {
+                        if (!firstMatch) {
+                            firstMatch = section.id;
+                        }
+                        matchCount++;
+                        highlightText(node, searchTerm);
+                    }
+                }
+            });
+
+            if (firstMatch) {
+                showSection(firstMatch);
+            }
+
+            // Show search result count
+            updateSearchCount(matchCount, searchTerm);
+        }
+
+        function highlightText(textNode, searchTerm) {
+            const text = textNode.textContent;
+            const regex = new RegExp(`(${escapeRegExp(searchTerm)})`, 'gi');
+
+            if (regex.test(text)) {
+                const span = document.createElement('span');
+                span.innerHTML = text.replace(regex, '<mark class="search-highlight">$1</mark>');
+                textNode.parentNode.replaceChild(span, textNode);
+            }
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.search-highlight').forEach(mark => {
+                const parent = mark.parentNode;
+                if (parent) {
+                    parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                    parent.normalize();
+                }
+            });
+        }
+
+        function updateSearchCount(count, term) {
+            let indicator = document.getElementById('searchIndicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'searchIndicator';
+                indicator.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: var(--primary); color: white; padding: 0.5rem 1rem; border-radius: 20px; box-shadow: var(--shadow-lg); z-index: 1000; font-size: 0.9rem;';
+                document.body.appendChild(indicator);
+            }
+            indicator.textContent = count > 0 ? `${count} matches for "${term}"` : `No matches for "${term}"`;
+            indicator.style.display = 'block';
+
+            setTimeout(() => {
+                indicator.style.display = 'none';
+            }, 3000);
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        // Theme toggle
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('mycelium-theme', newTheme);
+
+            const button = document.getElementById('themeToggle');
+            button.textContent = newTheme === 'dark' ? '☀️ Light' : '🌙 Dark';
+        }
+
+        // Load saved theme
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('mycelium-theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+
+            const button = document.getElementById('themeToggle');
+            if (button) {
+                button.textContent = savedTheme === 'dark' ? '☀️ Light' : '🌙 Dark';
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + K to focus search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+                document.getElementById('searchInput').select();
+            }
+
+            // Escape to clear search
+            if (e.key === 'Escape') {
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput.value) {
+                    searchInput.value = '';
+                    clearHighlights();
+                    showSection('overview');
+                }
+            }
+        });
+
+        // Initialize theme on load
+        window.addEventListener('DOMContentLoaded', loadTheme);
+    </script>
+</body>
+</html>

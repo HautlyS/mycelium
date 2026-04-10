@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Mycelium iOS Bridge — Info.plist Configuration
+        Section 8.6 CROSSDEVICE.md
+
+        Add these keys to your app's Info.plist to enable:
+        - Background P2P spore propagation
+        - Periodic spore synchronization
+        - Local network access for libp2p
+
+        See MyceliumBridge.swift for the Swift-side implementation.
+    -->
+
+    <!-- Background Task Scheduler Identifiers -->
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <!-- Background spore propagation task -->
+        <string>com.mycelium.background-propagation</string>
+        <!-- Periodic spore sync task -->
+        <string>com.mycelium.spore-sync</string>
+    </array>
+
+    <!-- Background Modes -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <!-- Allow background processing (BGProcessingTask) -->
+        <string>processing</string>
+        <!-- Allow background fetch (BGAppRefreshTask) -->
+        <string>fetch</string>
+    </array>
+
+    <!-- Local Network Usage Description -->
+    <!-- Required for libp2p P2P networking on iOS 14+ -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Mycelium uses local networking to discover and connect to peer nodes in the decentralized AI network. This enables distributed inference and federated learning.</string>
+
+    <!-- Bonjour Services (optional, for local discovery) -->
+    <!--
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_mycelium-p2p._tcp</string>
+    </array>
+    -->
+
+    <!-- App Transport Security (if needed for model downloads) -->
+    <!--
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>your-model-server.com</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+            </dict>
+        </dict>
+    </dict>
+    -->
+
+    <!-- Privacy - Network Usage (iOS 14+) -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryNetwork</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

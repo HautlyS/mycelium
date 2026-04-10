@@ -1,0 +1,62 @@
+version: "3.8"
+
+services:
+  # WebSocket Signaling Server for WebRTC
+  signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile.signaling
+    ports:
+      - "9001:9001"
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mycelium-net
+
+  # Mycelium Node (native)
+  node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+      - "4001:4001"
+    environment:
+      - RUST_LOG=info
+      - MYCELIUM_LISTEN_PORT=4001
+      - MYCELIUM_API_PORT=8080
+    volumes:
+      - mycelium-data:/root/.mycelium
+    restart: unless-stopped
+    depends_on:
+      signaling:
+        condition: service_healthy
+    networks:
+      - mycelium-net
+
+  # Nginx reverse proxy for WASM frontend + signaling
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./wasm:/usr/share/nginx/html:ro
+    depends_on:
+      - signaling
+    networks:
+      - mycelium-net
+
+volumes:
+  mycelium-data:
+
+networks:
+  mycelium-net:
+    driver: bridge
