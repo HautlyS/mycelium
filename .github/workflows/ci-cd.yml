@@ -12,6 +12,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Force Node.js 24 to avoid deprecation warnings for actions/checkout@v4
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ─── Lint & Format ─────────────────────────────────────────────────────
