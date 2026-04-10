@@ -318,19 +318,17 @@ pub fn parse_gguf_metadata(path: &Path) -> Result<Vec<TensorMeta>> {
         let _dtype = format!("{:?}", info.ggml_dtype);
 
         let dtype = match info.ggml_dtype {
-            candle_core::quantized::GgmlDtype::F32 => mycelium_core::WeightDtype::F32,
-            candle_core::quantized::GgmlDtype::F16 => mycelium_core::WeightDtype::F16,
-            candle_core::quantized::GgmlDtype::Q4_0 => mycelium_core::WeightDtype::Q4,
-            candle_core::quantized::GgmlDtype::Q4_1 => mycelium_core::WeightDtype::Q4,
-            candle_core::quantized::GgmlDtype::Q5_0 => mycelium_core::WeightDtype::Q5,
-            candle_core::quantized::GgmlDtype::Q5_1 => mycelium_core::WeightDtype::Q5,
-            candle_core::quantized::GgmlDtype::Q8_0 => mycelium_core::WeightDtype::Q8,
-            candle_core::quantized::GgmlDtype::Q8_1 => mycelium_core::WeightDtype::Q8,
-            candle_core::quantized::GgmlDtype::Q2_K => mycelium_core::WeightDtype::Q2,
-            candle_core::quantized::GgmlDtype::Q3_K => mycelium_core::WeightDtype::Q3,
-            candle_core::quantized::GgmlDtype::Q4_K => mycelium_core::WeightDtype::Q4,
-            candle_core::quantized::GgmlDtype::Q5_K => mycelium_core::WeightDtype::Q5,
-            candle_core::quantized::GgmlDtype::Q6_K => mycelium_core::WeightDtype::Q6,
+            candle_core::quantized::GgmlDType::F32 => mycelium_core::WeightDtype::F32,
+            candle_core::quantized::GgmlDType::F16 => mycelium_core::WeightDtype::F16,
+            candle_core::quantized::GgmlDType::BF16 => mycelium_core::WeightDtype::BF16,
+            candle_core::quantized::GgmlDType::Q4_0 => mycelium_core::WeightDtype::Q4,
+            candle_core::quantized::GgmlDType::Q4_1 => mycelium_core::WeightDtype::Q4,
+            candle_core::quantized::GgmlDType::Q8_0 => mycelium_core::WeightDtype::Q8,
+            candle_core::quantized::GgmlDType::Q8_1 => mycelium_core::WeightDtype::Q8,
+            candle_core::quantized::GgmlDType::Q2K => mycelium_core::WeightDtype::Q2,
+            candle_core::quantized::GgmlDType::Q4K => mycelium_core::WeightDtype::Q4,
+            candle_core::quantized::GgmlDType::Q5K => mycelium_core::WeightDtype::Q8,
+            candle_core::quantized::GgmlDType::Q6K => mycelium_core::WeightDtype::Q8,
             _ => mycelium_core::WeightDtype::F16,
         };
 
