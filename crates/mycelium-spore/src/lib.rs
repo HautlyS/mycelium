@@ -16,12 +16,10 @@
 //! - replicate(): Creates child spores from a parent with configurable mutations
 //! - verify_spore_integrity(): Comprehensive integrity verification
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use crc32fast::Hasher as Crc32Hasher;
-use mycelium_core::{
-    sha256_hash, LoRAAdapter, ModelConfig, NodeId, Spore, SporeGenome,
-};
+use mycelium_core::{LoRAAdapter, ModelConfig, NodeId, Spore, SporeGenome, sha256_hash};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -110,7 +108,10 @@ impl SporeLifecycle {
     ///
     /// The substrate manager is used to verify that the local node has
     /// sufficient resources to host the spore's weights.
-    pub fn germinate(&mut self, _substrate: &mut mycelium_substrate::SubstrateManager) -> Result<()> {
+    pub fn germinate(
+        &mut self,
+        _substrate: &mut mycelium_substrate::SubstrateManager,
+    ) -> Result<()> {
         if self.state != SporeState::Dormant {
             bail!(
                 "Cannot germinate spore {}: current state is {}, expected Dormant",
@@ -217,10 +218,7 @@ impl SporeLifecycle {
     pub fn kill(&mut self) -> Result<()> {
         let prev_state = self.state;
         self.state = SporeState::Dead;
-        info!(
-            "Spore {} killed (was {})",
-            self.spore.id, prev_state
-        );
+        info!("Spore {} killed (was {})", self.spore.id, prev_state);
         Ok(())
     }
 
@@ -377,7 +375,7 @@ pub fn replicate(parent: &Spore, mutations: MutationConfig) -> Result<Spore> {
         layer_range: parent.layer_range,
         expert_ids: parent.expert_ids.clone(),
         created_at: Utc::now(),
-        parent: parent.parent.clone(), // parent field is the originating NodeId
+        parent: parent.parent, // parent field is the originating NodeId
         generation: child_generation,
     };
 
@@ -414,12 +412,7 @@ fn apply_mutations(data: &mut [u8], config: &MutationConfig) {
     if config.weight_perturbation > 0.0 {
         let mut i = 0;
         while i + 4 <= data.len() {
-            let bytes = [
-                data[i],
-                data[i + 1],
-                data[i + 2],
-                data[i + 3],
-            ];
+            let bytes = [data[i], data[i + 1], data[i + 2], data[i + 3]];
             let mut weight = f32::from_le_bytes(bytes);
 
             // Add scaled random perturbation
@@ -564,7 +557,7 @@ impl SporeManifest {
         let data_len = spore.genome.data.len() as u64;
         Self {
             id: spore.id,
-            parent_node_id: spore.parent.clone(),
+            parent_node_id: spore.parent,
             created_at: spore.created_at,
             model_config: spore.model_config.clone(),
             layer_range: spore.layer_range,
@@ -573,7 +566,7 @@ impl SporeManifest {
             instincts: spore.instincts.clone(),
             uncompressed_size: spore.genome.decompressed_size,
             compressed_size: 0, // filled after compression
-            num_chunks: (data_len as usize + SPORE_CHUNK_SIZE - 1) / SPORE_CHUNK_SIZE,
+            num_chunks: (data_len as usize).div_ceil(SPORE_CHUNK_SIZE),
             generation: spore.generation,
         }
     }
@@ -634,7 +627,11 @@ impl SporeChunk {
         // Verify all chunks belong to the same spore
         for chunk in chunks {
             if chunk.spore_id != spore_id {
-                bail!("Chunk spore ID mismatch: expected {}, got {}", spore_id, chunk.spore_id);
+                bail!(
+                    "Chunk spore ID mismatch: expected {}, got {}",
+                    spore_id,
+                    chunk.spore_id
+                );
             }
         }
 
@@ -644,7 +641,11 @@ impl SporeChunk {
 
         // Verify completeness
         if sorted.len() != total {
-            bail!("Incomplete spore: expected {} chunks, got {}", total, sorted.len());
+            bail!(
+                "Incomplete spore: expected {} chunks, got {}",
+                total,
+                sorted.len()
+            );
         }
 
         // Verify each chunk's hash
@@ -653,10 +654,7 @@ impl SporeChunk {
             hasher.update(&chunk.data);
             let hash: [u8; 32] = hasher.finalize().into();
             if hash != chunk.chunk_hash {
-                bail!(
-                    "Chunk {} hash mismatch: data corrupted",
-                    chunk.chunk_index
-                );
+                bail!("Chunk {} hash mismatch: data corrupted", chunk.chunk_index);
             }
         }
 
@@ -725,11 +723,7 @@ impl SporeBuilder {
     /// layer range and expert IDs.
     pub fn build(self, weight_data: Vec<u8>, quant_bits: u8) -> Spore {
         let decompressed_size = weight_data.len() as u64;
-        let genome = SporeGenome::new(
-            weight_data,
-            quant_bits,
-            decompressed_size,
-        );
+        let genome = SporeGenome::new(weight_data, quant_bits, decompressed_size);
 
         Spore {
             id: Uuid::new_v4(),
@@ -755,7 +749,11 @@ impl SporeBuilder {
 
         let metadata = std::fs::metadata(gguf_path)?;
         let file_size = metadata.len() as f64 / (1024.0 * 1024.0);
-        info!("Reading GGUF file: {} ({:.1} MB)", gguf_path.display(), file_size);
+        info!(
+            "Reading GGUF file: {} ({:.1} MB)",
+            gguf_path.display(),
+            file_size
+        );
 
         let weight_data = tokio::fs::read(gguf_path).await?;
 
@@ -790,10 +788,7 @@ impl SporeGerminator {
 
     /// Germinate a spore: verify, decompress, and write weights.
     pub async fn germinate(&self, spore: &Spore) -> Result<GerminationResult> {
-        info!(
-            "Germinating spore {} from node {}",
-            spore.id, spore.parent
-        );
+        info!("Germinating spore {} from node {}", spore.id, spore.parent);
 
         // 1. Verify genome hash
         if !spore.genome.verify() {
@@ -841,13 +836,13 @@ impl SporeGerminator {
     /// Germinate from a serialized spore file.
     pub async fn germinate_file(&self, path: &Path) -> Result<GerminationResult> {
         let data = tokio::fs::read(path).await?;
-        let spore_file: SporeFile = serde_json::from_slice(&data)
-            .context("Failed to deserialize spore file")?;
+        let spore_file: SporeFile =
+            serde_json::from_slice(&data).context("Failed to deserialize spore file")?;
 
         // Verify hash
         let mut hasher = Sha256::new();
-        hasher.update(&spore_file.magic);
-        hasher.update(&spore_file.version.to_le_bytes());
+        hasher.update(spore_file.magic);
+        hasher.update(spore_file.version.to_le_bytes());
         let manifest_bytes = serde_json::to_vec(&spore_file.manifest)?;
         hasher.update(&manifest_bytes);
         hasher.update(&spore_file.data);
@@ -858,8 +853,8 @@ impl SporeGerminator {
         }
 
         // Decompress data
-        let decompressed = zstd::decode_all(&spore_file.data[..])
-            .context("Failed to decompress spore data")?;
+        let decompressed =
+            zstd::decode_all(&spore_file.data[..]).context("Failed to decompress spore data")?;
 
         // Reconstruct Spore struct
         let spore = Spore {
@@ -934,8 +929,8 @@ pub fn serialize_spore(spore: &Spore) -> Result<Vec<u8>> {
 
 /// Deserialize a spore from a compressed file (JSON format).
 pub fn deserialize_spore(data: &[u8]) -> Result<SporeFile> {
-    let spore_file: SporeFile = serde_json::from_slice(data)
-        .context("Failed to deserialize spore file")?;
+    let spore_file: SporeFile =
+        serde_json::from_slice(data).context("Failed to deserialize spore file")?;
 
     // Verify magic
     if &spore_file.magic != b"MYCO" {
@@ -953,8 +948,8 @@ pub fn deserialize_spore(data: &[u8]) -> Result<SporeFile> {
 
     // Verify hash
     let mut hasher = Sha256::new();
-    hasher.update(&spore_file.magic);
-    hasher.update(&spore_file.version.to_le_bytes());
+    hasher.update(spore_file.magic);
+    hasher.update(spore_file.version.to_le_bytes());
     let manifest_bytes = serde_json::to_vec(&spore_file.manifest)?;
     hasher.update(&manifest_bytes);
     hasher.update(&spore_file.data);
@@ -1049,7 +1044,10 @@ impl BinarySpore {
     /// Validates magic bytes, version, and CRC32 checksum.
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         if data.len() < 16 {
-            bail!("Binary spore data too short: {} bytes (minimum 16)", data.len());
+            bail!(
+                "Binary spore data too short: {} bytes (minimum 16)",
+                data.len()
+            );
         }
 
         // Parse header
@@ -1331,16 +1329,10 @@ pub enum NodeHealthEvent {
         last_seen: DateTime<Utc>,
     },
     /// A previously-timed-out node has sent a heartbeat again.
-    NodeRecovered {
-        node_id: NodeId,
-        downtime_ms: i64,
-    },
+    NodeRecovered { node_id: NodeId, downtime_ms: i64 },
     /// A node is responding but with degraded performance (heartbeats are late
     /// but still within the timeout window).
-    NodeDegraded {
-        node_id: NodeId,
-        delay_ms: i64,
-    },
+    NodeDegraded { node_id: NodeId, delay_ms: i64 },
 }
 
 /// Monitors the health of nodes in the P2P network by tracking heartbeats.
@@ -1400,7 +1392,11 @@ impl NodeHealthMonitor {
 
     /// Record a heartbeat at a specific timestamp (useful for testing and
     /// replaying logs).
-    pub fn record_heartbeat_at(&mut self, node_id: NodeId, at: DateTime<Utc>) -> Option<NodeHealthEvent> {
+    pub fn record_heartbeat_at(
+        &mut self,
+        node_id: NodeId,
+        at: DateTime<Utc>,
+    ) -> Option<NodeHealthEvent> {
         let was_failed = self.failed_nodes.remove(&node_id);
 
         let event = if was_failed {
@@ -1433,18 +1429,14 @@ impl NodeHealthMonitor {
 
             if elapsed >= self.timeout_ms {
                 if !self.failed_nodes.contains(&node_id) {
-                    events.push(NodeHealthEvent::NodeTimedOut {
-                        node_id,
-                        last_seen,
-                    });
+                    events.push(NodeHealthEvent::NodeTimedOut { node_id, last_seen });
                 }
-            } else if elapsed >= self.degraded_threshold_ms {
-                if !self.failed_nodes.contains(&node_id) {
-                    events.push(NodeHealthEvent::NodeDegraded {
-                        node_id,
-                        delay_ms: elapsed,
-                    });
-                }
+            } else if elapsed >= self.degraded_threshold_ms && !self.failed_nodes.contains(&node_id)
+            {
+                events.push(NodeHealthEvent::NodeDegraded {
+                    node_id,
+                    delay_ms: elapsed,
+                });
             }
         }
 
@@ -1501,7 +1493,10 @@ impl std::fmt::Display for PropagationState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PropagationState::Pending => write!(f, "Pending"),
-            PropagationState::InProgress { chunks_sent, total_chunks } => {
+            PropagationState::InProgress {
+                chunks_sent,
+                total_chunks,
+            } => {
                 write!(f, "InProgress({}/{})", chunks_sent, total_chunks)
             }
             PropagationState::Failed { reason } => write!(f, "Failed({})", reason),
@@ -1583,12 +1578,18 @@ impl TransferRecoveryLog {
 
     /// Return entries for a specific spore.
     pub fn entries_for_spore(&self, spore_id: Uuid) -> Vec<&TransferLogEntry> {
-        self.entries.iter().filter(|e| e.spore_id == spore_id).collect()
+        self.entries
+            .iter()
+            .filter(|e| e.spore_id == spore_id)
+            .collect()
     }
 
     /// Return entries for a specific target node.
     pub fn entries_for_node(&self, node_id: &NodeId) -> Vec<&TransferLogEntry> {
-        self.entries.iter().filter(|e| &e.target_node == node_id).collect()
+        self.entries
+            .iter()
+            .filter(|e| &e.target_node == node_id)
+            .collect()
     }
 
     /// Total number of entries.
@@ -1694,12 +1695,8 @@ impl FaultTolerantPropagator {
             total_chunks,
         };
         self.transfer_states.insert(key, state.clone());
-        self.recovery_log.record(
-            spore_id,
-            target,
-            state.clone(),
-            "transfer started",
-        );
+        self.recovery_log
+            .record(spore_id, target, state.clone(), "transfer started");
 
         info!(
             "FaultTolerantPropagator: started transfer of spore {} to node {} ({} chunks)",
@@ -1716,9 +1713,10 @@ impl FaultTolerantPropagator {
         let key = (spore_id, failed_node);
 
         let (chunks_sent, total_chunks) = match self.transfer_states.get(&key) {
-            Some(PropagationState::InProgress { chunks_sent, total_chunks }) => {
-                (*chunks_sent, *total_chunks)
-            }
+            Some(PropagationState::InProgress {
+                chunks_sent,
+                total_chunks,
+            }) => (*chunks_sent, *total_chunks),
             _ => (0, 0),
         };
 
@@ -1727,7 +1725,8 @@ impl FaultTolerantPropagator {
             reason: reason.clone(),
         };
         self.transfer_states.insert(key, state.clone());
-        self.recovery_log.record(spore_id, failed_node, state, &reason);
+        self.recovery_log
+            .record(spore_id, failed_node, state, &reason);
 
         warn!(
             "FaultTolerantPropagator: node {} failed during transfer of spore {} ({}/{} chunks sent)",
@@ -1763,7 +1762,10 @@ impl FaultTolerantPropagator {
                 spore_id,
                 new_target,
                 state.clone(),
-                format!("re-route from {} failed: new target offline", original_target),
+                format!(
+                    "re-route from {} failed: new target offline",
+                    original_target
+                ),
             );
             return state;
         }
@@ -1827,11 +1829,7 @@ impl FaultTolerantPropagator {
     }
 
     /// Get the current state of a transfer.
-    pub fn get_transfer_state(
-        &self,
-        spore_id: Uuid,
-        target: NodeId,
-    ) -> Option<&PropagationState> {
+    pub fn get_transfer_state(&self, spore_id: Uuid, target: NodeId) -> Option<&PropagationState> {
         self.transfer_states.get(&(spore_id, target))
     }
 
@@ -2290,14 +2288,16 @@ mod tests {
     fn test_binary_spore_to_spore() {
         let spore = test_spore();
         let binary = BinarySpore::from_spore(&spore).unwrap();
-        let restored = binary.to_spore(
-            spore.model_config.clone(),
-            spore.layer_range,
-            spore.expert_ids.clone(),
-            spore.parent.clone(),
-            spore.generation,
-            spore.genome.quant_bits,
-        ).unwrap();
+        let restored = binary
+            .to_spore(
+                spore.model_config.clone(),
+                spore.layer_range,
+                spore.expert_ids.clone(),
+                spore.parent.clone(),
+                spore.generation,
+                spore.genome.quant_bits,
+            )
+            .unwrap();
         // Genome data should match
         assert_eq!(restored.genome.data, spore.genome.data);
         assert_eq!(restored.generation, spore.generation);
@@ -2380,7 +2380,9 @@ mod tests {
         let t1 = t0 + chrono::Duration::milliseconds(6000);
         let events = monitor.check_health_at(t1);
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], NodeHealthEvent::NodeTimedOut { node_id, .. } if *node_id == node));
+        assert!(
+            matches!(&events[0], NodeHealthEvent::NodeTimedOut { node_id, .. } if *node_id == node)
+        );
         assert!(monitor.get_failed_nodes().contains(&node));
     }
 
@@ -2395,7 +2397,9 @@ mod tests {
         let t1 = t0 + chrono::Duration::milliseconds(4000);
         let events = monitor.check_health_at(t1);
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], NodeHealthEvent::NodeDegraded { node_id, delay_ms } if *node_id == node && *delay_ms == 4000));
+        assert!(
+            matches!(&events[0], NodeHealthEvent::NodeDegraded { node_id, delay_ms } if *node_id == node && *delay_ms == 4000)
+        );
         // Not yet failed
         assert!(monitor.get_failed_nodes().is_empty());
     }
@@ -2442,11 +2446,22 @@ mod tests {
     fn test_propagation_state_display() {
         assert_eq!(format!("{}", PropagationState::Pending), "Pending");
         assert_eq!(
-            format!("{}", PropagationState::InProgress { chunks_sent: 3, total_chunks: 10 }),
+            format!(
+                "{}",
+                PropagationState::InProgress {
+                    chunks_sent: 3,
+                    total_chunks: 10
+                }
+            ),
             "InProgress(3/10)"
         );
         assert_eq!(
-            format!("{}", PropagationState::Failed { reason: "offline".into() }),
+            format!(
+                "{}",
+                PropagationState::Failed {
+                    reason: "offline".into()
+                }
+            ),
             "Failed(offline)"
         );
         assert_eq!(format!("{}", PropagationState::Complete), "Complete");
@@ -2518,13 +2533,22 @@ mod tests {
         let target = test_node_id();
 
         let state = ftp.transfer_with_retry(spore_id, target, 10);
-        assert!(matches!(state, PropagationState::InProgress { chunks_sent: 0, total_chunks: 10 }));
+        assert!(matches!(
+            state,
+            PropagationState::InProgress {
+                chunks_sent: 0,
+                total_chunks: 10
+            }
+        ));
 
         // Simulate progress
         ftp.update_progress(spore_id, target, 5, 10);
         assert!(matches!(
             ftp.get_transfer_state(spore_id, target),
-            Some(PropagationState::InProgress { chunks_sent: 5, total_chunks: 10 })
+            Some(PropagationState::InProgress {
+                chunks_sent: 5,
+                total_chunks: 10
+            })
         ));
 
         ftp.complete_transfer(spore_id, target);
@@ -2596,7 +2620,13 @@ mod tests {
 
         // Resume to a different node, continuing from chunk 6
         let state = ftp.resume_transfer(spore_id, original, new_target, 6, 10);
-        assert!(matches!(state, PropagationState::InProgress { chunks_sent: 6, total_chunks: 10 }));
+        assert!(matches!(
+            state,
+            PropagationState::InProgress {
+                chunks_sent: 6,
+                total_chunks: 10
+            }
+        ));
 
         // Complete on the new target
         ftp.complete_transfer(spore_id, new_target);
@@ -2616,7 +2646,8 @@ mod tests {
         // Mark also_dead as failed
         let t0 = fixed_time();
         ftp.health_monitor.record_heartbeat_at(also_dead, t0);
-        ftp.health_monitor.check_health_at(t0 + chrono::Duration::milliseconds(6000));
+        ftp.health_monitor
+            .check_health_at(t0 + chrono::Duration::milliseconds(6000));
 
         let state = ftp.resume_transfer(spore_id, original, also_dead, 3, 10);
         assert!(matches!(state, PropagationState::Failed { .. }));

@@ -14,21 +14,20 @@
 use anyhow::{Result, bail};
 use futures::StreamExt;
 use libp2p::{
-    gossipsub, identify, kad,
-    noise, ping, tcp, yamux,
+    PeerId, StreamProtocol, Swarm, SwarmBuilder, gossipsub, identify, kad, noise, ping,
     swarm::{NetworkBehaviour, SwarmEvent},
-    PeerId, StreamProtocol, Swarm, SwarmBuilder,
+    tcp, yamux,
 };
 use mycelium_core::{
-    HyphaeMessage, NodeCapabilities, NodeId, LatentVector, TopologyMap,
-    TOPIC_SPORE, TOPIC_GRADIENT, TOPIC_TOPOLOGY,
+    HyphaeMessage, LatentVector, NodeCapabilities, NodeId, TOPIC_GRADIENT, TOPIC_SPORE,
+    TOPIC_TOPOLOGY, TopologyMap,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, error, info, warn};
 
 // ─── Network Behaviour ────────────────────────────────────────────────────
@@ -84,11 +83,17 @@ impl Default for HyphaeConfig {
 #[derive(Debug, Clone)]
 pub enum HyphaeEvent {
     /// A new peer joined the network
-    PeerJoined { peer_id: PeerId, capabilities: NodeCapabilities },
+    PeerJoined {
+        peer_id: PeerId,
+        capabilities: NodeCapabilities,
+    },
     /// A peer left the network
     PeerLeft { peer_id: PeerId },
     /// Received a message from the network
-    Message { source: PeerId, message: HyphaeMessage },
+    Message {
+        source: PeerId,
+        message: HyphaeMessage,
+    },
     /// Topology updated
     TopologyChanged { map: TopologyMap },
     /// Connection established
@@ -105,7 +110,10 @@ pub enum HyphaeEvent {
 #[derive(Debug)]
 enum SwarmCommand {
     /// Broadcast a message via gossipsub
-    Broadcast { message: HyphaeMessage, topic: GossipTopic },
+    Broadcast {
+        message: HyphaeMessage,
+        topic: GossipTopic,
+    },
     /// Send a direct message via Kademlia record
     SendDirect { peer: PeerId, data: Vec<u8> },
 }
@@ -335,11 +343,11 @@ impl HyphaeNetwork {
                 yamux::Config::default,
             )?
             .with_behaviour(|_| behaviour)?
-            .with_swarm_config(|cfg| cfg
-                .with_idle_connection_timeout(Duration::from_secs(60))
-                .with_max_negotiating_inbound_streams(128)
-                .with_notify_handler_buffer_size(NonZeroUsize::new(32).unwrap())
-            )
+            .with_swarm_config(|cfg| {
+                cfg.with_idle_connection_timeout(Duration::from_secs(60))
+                    .with_max_negotiating_inbound_streams(128)
+                    .with_notify_handler_buffer_size(NonZeroUsize::new(32).unwrap())
+            })
             .build();
 
         Ok(swarm)
@@ -396,10 +404,7 @@ impl HyphaeNetwork {
                     }
                 }
                 Err(e) => {
-                    warn!(
-                        "Invalid bootstrap peer address '{}': {}",
-                        peer_str, e
-                    );
+                    warn!("Invalid bootstrap peer address '{}': {}", peer_str, e);
                 }
             }
         }
@@ -500,6 +505,7 @@ async fn run_event_loop(
 }
 
 /// Handle a single swarm event.
+#[allow(clippy::too_many_arguments)]
 async fn handle_swarm_event(
     event: SwarmEvent<MyceliumBehaviourEvent>,
     swarm: &mut Swarm<MyceliumBehaviour>,
@@ -512,29 +518,25 @@ async fn handle_swarm_event(
 ) {
     match event {
         // Gossipsub message received
-        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Gossipsub(
-            gossipsub::Event::Message {
-                message_id: _,
-                message,
-                ..
-            },
-        )) => {
-            match serde_json::from_slice::<HyphaeMessage>(&message.data) {
-                Ok(hyphae_msg) => {
-                    debug!("Received hyphae message");
-                    let source = message.source.unwrap_or_else(PeerId::random);
-                    let _ = event_tx
-                        .send(HyphaeEvent::Message {
-                            source,
-                            message: hyphae_msg,
-                        })
-                        .await;
-                }
-                Err(e) => {
-                    warn!("Failed to decode hyphae message: {}", e);
-                }
+        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+            message_id: _,
+            message,
+            ..
+        })) => match serde_json::from_slice::<HyphaeMessage>(&message.data) {
+            Ok(hyphae_msg) => {
+                debug!("Received hyphae message");
+                let source = message.source.unwrap_or_else(PeerId::random);
+                let _ = event_tx
+                    .send(HyphaeEvent::Message {
+                        source,
+                        message: hyphae_msg,
+                    })
+                    .await;
             }
-        }
+            Err(e) => {
+                warn!("Failed to decode hyphae message: {}", e);
+            }
+        },
 
         // Gossipsub subscribed
         SwarmEvent::Behaviour(MyceliumBehaviourEvent::Gossipsub(
@@ -544,17 +546,12 @@ async fn handle_swarm_event(
         }
 
         // Identify received
-        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Identify(
-            identify::Event::Received {
-                peer_id,
-                info,
-                ..
-            },
-        )) => {
-            debug!(
-                "Identified peer {}: {:?}",
-                peer_id, info.agent_version
-            );
+        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Identify(identify::Event::Received {
+            peer_id,
+            info,
+            ..
+        })) => {
+            debug!("Identified peer {}: {:?}", peer_id, info.agent_version);
 
             // Add the peer's observed addresses to Kademlia
             for addr in info.listen_addrs {
@@ -575,16 +572,17 @@ async fn handle_swarm_event(
         }
 
         // Kademlia routing updated
-        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Kademlia(
-            kad::Event::RoutingUpdated { peer, .. },
-        )) => {
+        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
+            peer,
+            ..
+        })) => {
             debug!("Kademlia routing updated: {}", peer);
         }
 
         // Kademlia inbound request
-        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Kademlia(
-            kad::Event::InboundRequest { request },
-        )) => {
+        SwarmEvent::Behaviour(MyceliumBehaviourEvent::Kademlia(kad::Event::InboundRequest {
+            request,
+        })) => {
             debug!("Kademlia inbound request: {:?}", request);
         }
 
@@ -603,9 +601,7 @@ async fn handle_swarm_event(
             debug!("Connection closed: {}", peer_id);
             peer_set.remove(&peer_id);
             *connected_peers.write().await = peer_set.len();
-            let _ = event_tx
-                .send(HyphaeEvent::ConnectionLost { peer_id })
-                .await;
+            let _ = event_tx.send(HyphaeEvent::ConnectionLost { peer_id }).await;
         }
 
         // New listen address
@@ -620,9 +616,7 @@ async fn handle_swarm_event(
 
         // Ping
         SwarmEvent::Behaviour(MyceliumBehaviourEvent::Ping(ping::Event {
-            peer,
-            result,
-            ..
+            peer, result, ..
         })) => match result {
             Ok(rtt) => {
                 debug!("Ping to {} : {:.0}ms", peer, rtt.as_secs_f64() * 1000.0);
@@ -634,10 +628,7 @@ async fn handle_swarm_event(
 
         // Outgoing connection error
         SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-            debug!(
-                "Outgoing connection error to {:?}: {}",
-                peer_id, error
-            );
+            debug!("Outgoing connection error to {:?}: {}", peer_id, error);
         }
 
         // Incoming connection error
@@ -693,11 +684,7 @@ async fn handle_broadcast(
 
     let ident_topic = gossipsub::IdentTopic::new(topic.topic_name());
 
-    let msg_id = match swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(ident_topic, data)
-    {
+    let msg_id = match swarm.behaviour_mut().gossipsub.publish(ident_topic, data) {
         Ok(id) => id,
         Err(e) => {
             warn!("Failed to publish gossipsub message: {}", e);
@@ -705,21 +692,27 @@ async fn handle_broadcast(
         }
     };
 
-    debug!("Published message {:?} on topic {:?} (id: {:?})", message, topic, msg_id);
+    debug!(
+        "Published message {:?} on topic {:?} (id: {:?})",
+        message, topic, msg_id
+    );
 }
 
 /// Handle a send_direct command via Kademlia record.
-async fn handle_send_direct(
-    swarm: &mut Swarm<MyceliumBehaviour>,
-    peer: PeerId,
-    data: Vec<u8>,
-) {
+async fn handle_send_direct(swarm: &mut Swarm<MyceliumBehaviour>, peer: PeerId, data: Vec<u8>) {
     // Store the data as a Kademlia record keyed by the peer's PeerId bytes
     let key = peer.to_bytes();
     let record = kad::Record::new(key, data);
 
-    if let Err(e) = swarm.behaviour_mut().kademlia.put_record(record, kad::Quorum::One) {
-        warn!("Failed to put Kademlia record for direct message to {}: {}", peer, e);
+    if let Err(e) = swarm
+        .behaviour_mut()
+        .kademlia
+        .put_record(record, kad::Quorum::One)
+    {
+        warn!(
+            "Failed to put Kademlia record for direct message to {}: {}",
+            peer, e
+        );
     } else {
         debug!("Stored Kademlia record for direct message to {}", peer);
     }
@@ -732,8 +725,8 @@ async fn update_topology(
 ) {
     let mut topo = topology.write().await;
     let nodes: Vec<_> = peer_set
-        .iter()
-        .map(|(_, caps)| (NodeId::new(), caps.clone()))
+        .values()
+        .map(|caps| (NodeId::new(), caps.clone()))
         .collect();
     topo.nodes = nodes;
     // Edges and latencies are not yet populated from real measurements
@@ -767,47 +760,36 @@ impl HyphaeLatentTransport {
             pending_latents: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-    
+
     /// Register a node->peer mapping.
     pub async fn register_node_peer(&self, node_id: NodeId, peer_id: PeerId) {
         let mut mapping = self.node_to_peer.write().await;
         mapping.insert(node_id, peer_id);
     }
-    
+
     /// Get the underlying handle for receiving events.
     pub fn handle(&self) -> &HyphaeHandle {
         &self.handle
     }
-    
+
     /// Handle an incoming latent response.
-    pub async fn handle_latent_response(
-        &self,
-        request_id: Uuid,
-        latent: LatentVector,
-    ) {
+    pub async fn handle_latent_response(&self, request_id: Uuid, latent: LatentVector) {
         let mut pending = self.pending_latents.lock().await;
         if let Some(tx) = pending.remove(&request_id) {
             let _ = tx.send(Ok(latent));
         }
     }
-    
+
     /// Wait for a latent response with timeout.
-    pub async fn wait_for_latent(
-        &self,
-        request_id: Uuid,
-        timeout_ms: u64,
-    ) -> Result<LatentVector> {
+    pub async fn wait_for_latent(&self, request_id: Uuid, timeout_ms: u64) -> Result<LatentVector> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        
+
         {
             let mut pending = self.pending_latents.lock().await;
             pending.insert(request_id, tx);
         }
-        
-        match tokio::time::timeout(
-            Duration::from_millis(timeout_ms),
-            rx
-        ).await {
+
+        match tokio::time::timeout(Duration::from_millis(timeout_ms), rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => bail!("Channel closed"),
             Err(_) => {
@@ -875,7 +857,9 @@ impl mycelium_compute::LatentTransport for HyphaeLatentTransport {
 
         debug!(
             "Broadcast latent to {} nodes (layer {}, request {})",
-            nodes.len(), layer_idx, request_id
+            nodes.len(),
+            layer_idx,
+            request_id
         );
 
         Ok(nodes)
@@ -925,20 +909,13 @@ impl mycelium_compute::LatentTransport for HyphaeLatentTransport {
 
         self.handle.broadcast(&message).await?;
 
-        debug!(
-            "Sent stream data {} on stream {}",
-            sequence, stream_id
-        );
+        debug!("Sent stream data {} on stream {}", sequence, stream_id);
 
         Ok(())
     }
 
     /// Close a latent stream.
-    async fn close_stream(
-        &self,
-        stream_id: Uuid,
-        reason: &str,
-    ) -> Result<()> {
+    async fn close_stream(&self, stream_id: Uuid, reason: &str) -> Result<()> {
         let message = HyphaeMessage::StreamClose {
             stream_id,
             reason: reason.to_string(),
@@ -946,10 +923,7 @@ impl mycelium_compute::LatentTransport for HyphaeLatentTransport {
 
         self.handle.broadcast(&message).await?;
 
-        debug!(
-            "Closed latent stream {}: {}",
-            stream_id, reason
-        );
+        debug!("Closed latent stream {}: {}", stream_id, reason);
 
         Ok(())
     }
@@ -1021,8 +995,21 @@ mod tests {
         let decoded: HyphaeMessage = serde_json::from_slice(&bytes).expect("deserialize");
 
         // Verify the round-trip
-        if let HyphaeMessage::StreamOpen { stream_id, buffer_size, layer_start, layer_end, .. } = decoded {
-            assert_eq!(stream_id, match &msg { HyphaeMessage::StreamOpen { stream_id, .. } => *stream_id, _ => panic!() });
+        if let HyphaeMessage::StreamOpen {
+            stream_id,
+            buffer_size,
+            layer_start,
+            layer_end,
+            ..
+        } = decoded
+        {
+            assert_eq!(
+                stream_id,
+                match &msg {
+                    HyphaeMessage::StreamOpen { stream_id, .. } => *stream_id,
+                    _ => panic!(),
+                }
+            );
             assert_eq!(buffer_size, 64);
             assert_eq!(layer_start, 0);
             assert_eq!(layer_end, 32);
@@ -1078,7 +1065,12 @@ mod tests {
         let bytes = serde_json::to_vec(&msg).expect("serialize");
         let decoded: HyphaeMessage = serde_json::from_slice(&bytes).expect("deserialize");
 
-        if let HyphaeMessage::StreamAck { sequence, received_count, .. } = decoded {
+        if let HyphaeMessage::StreamAck {
+            sequence,
+            received_count,
+            ..
+        } = decoded
+        {
             assert_eq!(sequence, 10);
             assert_eq!(received_count, 8);
         } else {

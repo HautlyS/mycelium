@@ -1,0 +1,409 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ─── Lint & Format ─────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (all crates, no GPU features)
+        run: cargo clippy --workspace -- -D warnings
+
+  # ─── Build & Test (Linux x86_64, CPU only) ──────────────────────────────
+  test-linux-cpu:
+    name: Test Linux x86_64 (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libclang-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (default features)
+        run: cargo build --workspace
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mycelium-linux-x86_64
+          path: target/release/mycelium
+          retention-days: 7
+
+  # ─── Build & Test (Linux x86_64, Vulkan via Lavapipe) ───────────────────
+  test-linux-vulkan:
+    name: Test Linux x86_64 (Vulkan CI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libclang-dev \
+            mesa-vulkan-drivers vulkan-tools
+
+      - name: Install Vulkan SDK (Lavapipe software renderer)
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.3.296
+          cache: true
+
+      - name: Configure Lavapipe
+        run: |
+          echo "WGPU_BACKEND=vulkan" >> $GITHUB_ENV
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> $GITHUB_ENV
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build with vulkan feature
+        run: cargo build -p mycelium-vulkan
+
+      - name: Run vulkan tests (CPU renderer)
+        run: cargo test -p mycelium-vulkan
+        continue-on-error: true # Lavapipe may not support all compute features
+
+  # ─── Build (macOS, CPU + Metal) ─────────────────────────────────────────
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (default)
+        run: cargo build --workspace
+
+      - name: Build with Metal
+        run: cargo build --workspace --features metal
+        continue-on-error: true # May fail without Apple Silicon runner
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  # ─── Build (Windows x86_64) ─────────────────────────────────────────────
+  build-windows:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.3.296
+          cache: true
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  # ─── Build (Linux ARM64 cross-compile) ──────────────────────────────────
+  build-linux-arm64:
+    name: Build Linux ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compile tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            pkg-config libssl-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build for ARM64
+        run: |
+          CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+          cargo build --workspace --target aarch64-unknown-linux-gnu --exclude mycelium-web
+
+  # ─── Build (Android ARM64 cross-compile) ────────────────────────────────
+  build-android:
+    name: Build Android ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: true
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.3.296
+          cache: true
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Android build environment
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
+          echo "CC_aarch64_linux_android=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang" >> $GITHUB_ENV
+
+      - name: Build mycelium-vulkan for Android
+        run: |
+          CC_aarch64_linux_android=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
+          cargo build -p mycelium-vulkan --target aarch64-linux-android
+
+      - name: Build core crates for Android
+        run: |
+          CC_aarch64_linux_android=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
+          cargo build -p mycelium-core -p mycelium-spore -p mycelium-nucleus \
+            --target aarch64-linux-android
+
+  # ─── Build (WASM/WebGPU for browser) ────────────────────────────────────
+  build-wasm:
+    name: Build WASM/WebGPU
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-build
+
+      - name: Build WASM
+        run: wasm-pack build --target web crates/mycelium-web --out-dir pkg
+
+      - name: Verify WASM output
+        run: |
+          ls -la crates/mycelium-web/pkg/
+          file crates/mycelium-web/pkg/mycelium_web.wasm
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mycelium-web
+          path: crates/mycelium-web/pkg/
+          retention-days: 7
+
+  # ─── Build with CUDA (optional - only runs on GPU runners) ──────────────
+  build-cuda:
+    name: Build CUDA (optional)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build with CUDA
+        run: cargo build --release -p mycelium-node --features cuda
+
+  # ─── Build ROCm compatibility check ─────────────────────────────────────
+  check-rocm:
+    name: Check ROCm compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libclang-dev \
+            mesa-vulkan-drivers
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build with vulkan (ROCm uses Vulkan/RADV on Linux)
+        run: cargo build -p mycelium-vulkan
+
+      - name: Run ROCm detection tests
+        run: cargo test -p mycelium-vulkan rocm -- --nocapture
+
+  # ─── Documentation ──────────────────────────────────────────────────────
+  docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libclang-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build docs
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: --cfg docsrs
+
+      - name: Upload docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-docs
+          path: target/doc/
+          retention-days: 30
+
+  # ─── Deploy to GitHub Pages ─────────────────────────────────────────────
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-wasm]
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mycelium-web
+          path: .
+
+      - name: Setup GitHub Pages
+        id: pages-setup
+        uses: actions/configure-pages@v4
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ─── Release (on tag) ───────────────────────────────────────────────────
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [lint, test-linux-cpu, build-macos, build-windows, build-android, build-wasm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libclang-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --workspace
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mycelium-web
+          path: web/
+
+      - name: Create release archive
+        run: |
+          mkdir -p release
+          tar czf mycelium-${{ github.ref_name }}-x86_64-linux.tar.gz \
+            -C target/release mycelium
+          cd web && tar czf ../mycelium-${{ github.ref_name }}-web.tar.gz . && cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mycelium-${{ github.ref_name }}-x86_64-linux.tar.gz
+            mycelium-${{ github.ref_name }}-web.tar.gz
+          generate_release_notes: true

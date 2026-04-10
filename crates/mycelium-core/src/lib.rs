@@ -26,6 +26,12 @@ impl NodeId {
     }
 }
 
+impl Default for NodeId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl fmt::Display for NodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -96,7 +102,12 @@ impl NodeCapabilities {
                 .args(["-n", "hw.ncpu"])
                 .output()
                 .ok()
-                .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u32>().ok())
+                .and_then(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .trim()
+                        .parse::<u32>()
+                        .ok()
+                })
                 .unwrap_or(1)
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -131,7 +142,12 @@ impl NodeCapabilities {
                 .args(["-n", "hw.memsize"])
                 .output()
                 .ok()
-                .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+                .and_then(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .trim()
+                        .parse::<u64>()
+                        .ok()
+                })
                 .map(|bytes| (bytes / (1024 * 1024)) as u32)
                 .unwrap_or(8192)
         }
@@ -280,10 +296,7 @@ impl LatentVector {
 
     /// Interpolate between two latent vectors
     pub fn lerp(&self, other: &LatentVector, t: f32) -> LatentVector {
-        assert_eq!(
-            self.dim, other.dim,
-            "Latent dimensions must match for lerp"
-        );
+        assert_eq!(self.dim, other.dim, "Latent dimensions must match for lerp");
         let data = self
             .data
             .iter()
@@ -427,8 +440,8 @@ impl ModelConfig {
             intermediate_dim: 16384,
             max_context: 1_000_000,
             vocab_size: 200000,
-            eos_token_id: Some(2),  // Common EOS token ID
-            bos_token_id: Some(1),  // Common BOS token ID
+            eos_token_id: Some(2), // Common EOS token ID
+            bos_token_id: Some(1), // Common BOS token ID
         }
     }
 
@@ -507,24 +520,30 @@ impl GgufConfig {
     /// are stored in the `metadata` hashmap for later use.
     pub fn from_metadata(kv: HashMap<String, GgufValue>) -> Self {
         let get_str = |key: &str| -> String {
-            kv.get(key).and_then(|v| match v {
-                GgufValue::String(s) => Some(s.clone()),
-                _ => None,
-            }).unwrap_or_default()
+            kv.get(key)
+                .and_then(|v| match v {
+                    GgufValue::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .unwrap_or_default()
         };
         let get_uint = |key: &str, default: usize| -> usize {
-            kv.get(key).and_then(|v| match v {
-                GgufValue::Uint(n) => Some(*n as usize),
-                GgufValue::Int(n) => Some(*n as usize),
-                _ => None,
-            }).unwrap_or(default)
+            kv.get(key)
+                .and_then(|v| match v {
+                    GgufValue::Uint(n) => Some(*n as usize),
+                    GgufValue::Int(n) => Some(*n as usize),
+                    _ => None,
+                })
+                .unwrap_or(default)
         };
         let get_float = |key: &str, default: f32| -> f32 {
-            kv.get(key).and_then(|v| match v {
-                GgufValue::Float(f) => Some(*f as f32),
-                GgufValue::Int(n) => Some(*n as f32),
-                _ => None,
-            }).unwrap_or(default)
+            kv.get(key)
+                .and_then(|v| match v {
+                    GgufValue::Float(f) => Some(*f as f32),
+                    GgufValue::Int(n) => Some(*n as f32),
+                    _ => None,
+                })
+                .unwrap_or(default)
         };
 
         Self {
@@ -534,17 +553,22 @@ impl GgufConfig {
             embedding_length: get_uint("llama.embedding_length", 4096),
             block_count: get_uint("llama.block_count", 32),
             head_count: get_uint("llama.attention.head_count", 32),
-            head_count_kv: get_uint("llama.attention.head_count_kv", get_uint("llama.attention.head_count", 32)),
+            head_count_kv: get_uint(
+                "llama.attention.head_count_kv",
+                get_uint("llama.attention.head_count", 32),
+            ),
             feed_forward_length: get_uint("llama.feed_forward_length", 11008),
             expert_count: get_uint("llama.expert_count", 1),
             expert_used_count: get_uint("llama.expert_used_count", 1),
             layer_norm_eps: get_float("llama.attention.layer_norm_rms_epsilon", 1e-6),
             vocab_size: get_uint("llama.vocab_size", 32000),
-            quantization_version: kv.get("general.quantization_version").and_then(|v| match v {
-                GgufValue::String(s) => Some(s.clone()),
-                GgufValue::Uint(n) => Some(format!("{}", n)),
-                _ => None,
-            }),
+            quantization_version: kv
+                .get("general.quantization_version")
+                .and_then(|v| match v {
+                    GgufValue::String(s) => Some(s.clone()),
+                    GgufValue::Uint(n) => Some(format!("{}", n)),
+                    _ => None,
+                }),
             file_type: kv.get("general.file_type").and_then(|v| match v {
                 GgufValue::String(s) => Some(s.clone()),
                 GgufValue::Uint(n) => Some(format!("{}", n)),
@@ -709,8 +733,9 @@ impl WeightDtype {
             Self::Q2 => 1, // packed
             Self::Quantized { bits, group_size } => {
                 // Approximate: bits per element, packed into bytes
-                let total_bits = *bits as usize * *group_size;
-                (total_bits + 7) / 8 / group_size
+                #[allow(clippy::manual_div_ceil)]
+                let bytes_per_group = ((*bits as usize * *group_size) + 7) / 8;
+                bytes_per_group / group_size
             }
         }
     }
@@ -758,7 +783,12 @@ pub struct KVCacheEntry {
 
 impl KVCache {
     /// Create a new empty KV cache.
-    pub fn new(num_layers: usize, num_kv_heads: usize, head_dim: usize, max_seq_len: usize) -> Self {
+    pub fn new(
+        num_layers: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        max_seq_len: usize,
+    ) -> Self {
         let slot_size = num_kv_heads * head_dim;
         Self {
             layers: (0..num_layers)
@@ -1054,10 +1084,7 @@ pub enum HyphaeMessage {
         received_count: u64,
     },
     /// Close a latent stream
-    StreamClose {
-        stream_id: Uuid,
-        reason: String,
-    },
+    StreamClose { stream_id: Uuid, reason: String },
 
     // ── Replication (Spore Protocol) ──
     /// Broadcast that a spore is available for germination
@@ -1068,10 +1095,7 @@ pub enum HyphaeMessage {
         total_size_mb: u32,
     },
     /// Request a spore for germination
-    SporeRequest {
-        spore_id: Uuid,
-        requester: NodeId,
-    },
+    SporeRequest { spore_id: Uuid, requester: NodeId },
     /// Transfer a chunk of spore data
     SporeChunk {
         spore_id: Uuid,
@@ -1088,15 +1112,9 @@ pub enum HyphaeMessage {
         node_id: NodeId,
     },
     /// Request weight synchronization
-    WeightSyncRequest {
-        from_version: u64,
-        node_id: NodeId,
-    },
+    WeightSyncRequest { from_version: u64, node_id: NodeId },
     /// Weight sync response
-    WeightSyncResponse {
-        version: u64,
-        weights: Vec<f32>,
-    },
+    WeightSyncResponse { version: u64, weights: Vec<f32> },
 
     // ── Topology ──
     /// Updated topology map
@@ -1328,7 +1346,16 @@ mod tests {
     fn test_byte_tokenizer() {
         let tok = ByteTokenizer::new(256);
         let encoded = tok.encode("hello").unwrap();
-        assert_eq!(encoded, vec![b'h' as u32, b'e' as u32, b'l' as u32, b'l' as u32, b'o' as u32]);
+        assert_eq!(
+            encoded,
+            vec![
+                b'h' as u32,
+                b'e' as u32,
+                b'l' as u32,
+                b'l' as u32,
+                b'o' as u32
+            ]
+        );
         let decoded = tok.decode(&encoded).unwrap();
         assert_eq!(decoded, "hello");
     }
@@ -1336,8 +1363,14 @@ mod tests {
     #[test]
     fn test_gguf_config_from_metadata() {
         let mut kv = HashMap::new();
-        kv.insert("general.architecture".into(), GgufValue::String("llama".into()));
-        kv.insert("general.name".into(), GgufValue::String("test-model".into()));
+        kv.insert(
+            "general.architecture".into(),
+            GgufValue::String("llama".into()),
+        );
+        kv.insert(
+            "general.name".into(),
+            GgufValue::String("test-model".into()),
+        );
         kv.insert("llama.context_length".into(), GgufValue::Uint(8192));
         kv.insert("llama.embedding_length".into(), GgufValue::Uint(4096));
         kv.insert("llama.block_count".into(), GgufValue::Uint(32));
@@ -1359,7 +1392,10 @@ mod tests {
     #[test]
     fn test_gguf_config_moe() {
         let mut kv = HashMap::new();
-        kv.insert("general.architecture".into(), GgufValue::String("llama".into()));
+        kv.insert(
+            "general.architecture".into(),
+            GgufValue::String("llama".into()),
+        );
         kv.insert("general.name".into(), GgufValue::String("moe-test".into()));
         kv.insert("llama.embedding_length".into(), GgufValue::Uint(6144));
         kv.insert("llama.block_count".into(), GgufValue::Uint(64));
@@ -1441,7 +1477,12 @@ mod tests {
         let decoded: HyphaeMessage = serde_json::from_str(&json).unwrap();
 
         match decoded {
-            HyphaeMessage::StreamOpen { buffer_size, layer_start, layer_end, .. } => {
+            HyphaeMessage::StreamOpen {
+                buffer_size,
+                layer_start,
+                layer_end,
+                ..
+            } => {
                 assert_eq!(buffer_size, 128);
                 assert_eq!(layer_start, 0);
                 assert_eq!(layer_end, 32);
@@ -1463,7 +1504,11 @@ mod tests {
         let decoded: HyphaeMessage = serde_json::from_str(&json).unwrap();
 
         match decoded {
-            HyphaeMessage::StreamData { sequence, latent: l, .. } => {
+            HyphaeMessage::StreamData {
+                sequence,
+                latent: l,
+                ..
+            } => {
                 assert_eq!(sequence, 100);
                 assert_eq!(l.layer_idx, 10);
                 assert_eq!(l.data, vec![1.0, 2.0, 3.0]);
@@ -1484,7 +1529,11 @@ mod tests {
         let decoded: HyphaeMessage = serde_json::from_str(&json).unwrap();
 
         match decoded {
-            HyphaeMessage::StreamAck { sequence, received_count, .. } => {
+            HyphaeMessage::StreamAck {
+                sequence,
+                received_count,
+                ..
+            } => {
                 assert_eq!(sequence, 50);
                 assert_eq!(received_count, 48);
             }

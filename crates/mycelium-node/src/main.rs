@@ -10,12 +10,12 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use mycelium_core::{ModelConfig, NodeId, HyphaeMessage, SporeGenome, NodeCapabilities};
-use mycelium_fruit::{AppState, NodeStatus, FruitConfig, InferenceService, InferenceBackend};
-use mycelium_spore::{SporePropagator, PropagationConfig, NodeCapacityState, SporeBuilder};
-use tracing::{info, warn, error, debug};
+use mycelium_core::{HyphaeMessage, ModelConfig, NodeCapabilities, NodeId, SporeGenome};
+use mycelium_fruit::{AppState, FruitConfig, InferenceBackend, InferenceService, NodeStatus};
+use mycelium_spore::{NodeCapacityState, PropagationConfig, SporeBuilder, SporePropagator};
 use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
+use tracing::{debug, error, info, warn};
 
 // ─── CLI ─────────────────────────────────────────────────────────
 
@@ -130,10 +130,7 @@ impl InferenceBackend for ComputeBackend {
         eng.extract_latent(prompt, layer_idx)
     }
 
-    async fn apply_lora(
-        &mut self,
-        adapter: mycelium_core::LoRAAdapter,
-    ) -> anyhow::Result<()> {
+    async fn apply_lora(&mut self, adapter: mycelium_core::LoRAAdapter) -> anyhow::Result<()> {
         let mut eng = self.engine.write().await;
         eng.apply_lora(&adapter)
     }
@@ -220,7 +217,7 @@ async fn main() -> Result<()> {
     // 5. Initialize P2P network
     let hyphae_config = mycelium_hyphae::HyphaeConfig {
         listen_addr: cli.listen.clone(),
-        bootstrap_peers: cli.bootstrap.iter().cloned().collect(),
+        bootstrap_peers: cli.bootstrap.to_vec(),
         ..Default::default()
     };
 
@@ -233,9 +230,10 @@ async fn main() -> Result<()> {
     info!("P2P network started, listening for peers");
 
     // 6. Initialize nucleus (self-tuning)
-    let nucleus = Arc::new(Mutex::new(
-        mycelium_nucleus::Nucleus::new(model_config.clone(), node_id.clone())
-    ));
+    let nucleus = Arc::new(Mutex::new(mycelium_nucleus::Nucleus::new(
+        model_config.clone(),
+        node_id,
+    )));
     info!(
         "Nucleus initialized (LoRA rank={})",
         mycelium_core::LORA_DEFAULT_RANK
@@ -244,7 +242,7 @@ async fn main() -> Result<()> {
     // 7. Initialize spore propagator if spore mode enabled
     let caps = NodeCapabilities::auto_detect();
     let node_state = NodeCapacityState {
-        node_id: node_id.clone(),
+        node_id,
         available_vram_mb: caps.vram_mb,
         available_ram_mb: caps.ram_mb,
         layer_range: (0, model_config.num_layers),
@@ -270,13 +268,13 @@ async fn main() -> Result<()> {
 
     // Build AppState with references to all components
     let status = NodeStatus {
-        node_id: node_id.clone(),
+        node_id,
         status: "starting".into(),
         ..Default::default()
     };
 
     let app_state = AppState {
-        node_id: node_id.clone(),
+        node_id,
         status: Arc::new(RwLock::new(status)),
         inference_tx: None,
         inference_rx: Arc::new(RwLock::new(None)),
@@ -301,7 +299,10 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!("Fruit API will be available at http://localhost:{}", api_port);
+    info!(
+        "Fruit API will be available at http://localhost:{}",
+        api_port
+    );
 
     // 9. Main event loop — integrate all components
     info!("Starting main event loop...");
@@ -349,11 +350,9 @@ async fn main() -> Result<()> {
 
             // Update training metrics from nucleus
             let nuc = status_nucleus.lock().await;
-            status_state.update_training_metrics(
-                nuc.step(),
-                nuc.experience_size(),
-                nuc.running_loss(),
-            ).await;
+            status_state
+                .update_training_metrics(nuc.step(), nuc.experience_size(), nuc.running_loss())
+                .await;
         }
     });
 
@@ -377,21 +376,24 @@ async fn run_hyphae_event_loop(
     nucleus: Arc<Mutex<mycelium_nucleus::Nucleus>>,
     propagator: Option<Arc<Mutex<SporePropagator>>>,
     app_state: AppState,
-    config: ModelConfig,
+    _config: ModelConfig,
 ) {
     info!("Hyphae event processor started");
 
     loop {
         match handle.next_event().await {
-            Some(mycelium_hyphae::HyphaeEvent::PeerJoined { peer_id, capabilities }) => {
-                info!("Peer joined: {} (VRAM: {}MB)", peer_id, capabilities.vram_mb);
+            Some(mycelium_hyphae::HyphaeEvent::PeerJoined {
+                peer_id,
+                capabilities,
+            }) => {
+                info!(
+                    "Peer joined: {} (VRAM: {}MB)",
+                    peer_id, capabilities.vram_mb
+                );
 
                 // Update app state
                 app_state
-                    .update_network_status(
-                        handle.connected_peers().await,
-                        capabilities.vram_mb,
-                    )
+                    .update_network_status(handle.connected_peers().await, capabilities.vram_mb)
                     .await;
             }
 
@@ -403,7 +405,12 @@ async fn run_hyphae_event_loop(
                 debug!("Received message from {}", source);
 
                 match message {
-                    HyphaeMessage::GradientDelta { layer_idx, delta: _, version, node_id: grad_node } => {
+                    HyphaeMessage::GradientDelta {
+                        layer_idx,
+                        delta: _,
+                        version,
+                        node_id: grad_node,
+                    } => {
                         info!(
                             "Received gradient delta for layer {} v{} from {}",
                             layer_idx, version, grad_node
@@ -412,14 +419,19 @@ async fn run_hyphae_event_loop(
                         let mut nuc = nucleus.lock().await;
                         nuc.receive_federated_delta(&message);
                         // Try federated averaging if enough participants
-                        if let Ok(success) = nuc.try_federated_average() {
-                            if success {
-                                info!("Federated averaging applied from peer gradients");
-                            }
+                        if let Ok(success) = nuc.try_federated_average()
+                            && success
+                        {
+                            info!("Federated averaging applied from peer gradients");
                         }
                     }
 
-                    HyphaeMessage::SporeAvailable { spore_id, model_name, shard_count, total_size_mb } => {
+                    HyphaeMessage::SporeAvailable {
+                        spore_id: _,
+                        model_name,
+                        shard_count,
+                        total_size_mb,
+                    } => {
                         info!(
                             "Spore available from {}: {} ({} shards, {}MB)",
                             source, model_name, shard_count, total_size_mb
@@ -428,7 +440,10 @@ async fn run_hyphae_event_loop(
                         // and storing them - logged for now
                     }
 
-                    HyphaeMessage::SporeRequest { spore_id, requester } => {
+                    HyphaeMessage::SporeRequest {
+                        spore_id,
+                        requester,
+                    } => {
                         info!("Peer {} requested spore {}", requester, spore_id);
                     }
 
@@ -443,7 +458,11 @@ async fn run_hyphae_event_loop(
                             .await;
                     }
 
-                    HyphaeMessage::LatentDispatch { stream_id, layer_idx, latent } => {
+                    HyphaeMessage::LatentDispatch {
+                        stream_id,
+                        layer_idx,
+                        latent,
+                    } => {
                         debug!(
                             "Received latent for stream {} at layer {}",
                             stream_id, layer_idx
@@ -457,11 +476,16 @@ async fn run_hyphae_event_loop(
                         }
                         info!(
                             "Received latent added as training experience: dim={}, layer={}",
-                            latent.data.len(), layer_idx
+                            latent.data.len(),
+                            layer_idx
                         );
                     }
 
-                    HyphaeMessage::NodeAnnounce { node_id: ann_node, capabilities, listen_addr } => {
+                    HyphaeMessage::NodeAnnounce {
+                        node_id: ann_node,
+                        capabilities,
+                        listen_addr,
+                    } => {
                         info!(
                             "Node {} announced: VRAM={}MB, addr={}",
                             ann_node, capabilities.vram_mb, listen_addr
@@ -535,7 +559,10 @@ async fn run_nucleus_training_loop(nucleus: Arc<Mutex<mycelium_nucleus::Nucleus>
         match nuc.train_step() {
             Ok(messages) => {
                 if !messages.is_empty() {
-                    debug!("Training step complete, produced {} gradient messages", messages.len());
+                    debug!(
+                        "Training step complete, produced {} gradient messages",
+                        messages.len()
+                    );
                 }
             }
             Err(e) => {
@@ -547,8 +574,15 @@ async fn run_nucleus_training_loop(nucleus: Arc<Mutex<mycelium_nucleus::Nucleus>
 
 async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Result<()> {
     match command {
-        Commands::Generate { prompt, max_tokens, temperature } => {
-            info!("Generating from: '{}' (max_tokens={}, temp={})", prompt, max_tokens, temperature);
+        Commands::Generate {
+            prompt,
+            max_tokens,
+            temperature,
+        } => {
+            info!(
+                "Generating from: '{}' (max_tokens={}, temp={})",
+                prompt, max_tokens, temperature
+            );
             println!("Generating...");
             println!();
 
@@ -560,12 +594,12 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
                 match engine.load_model(model_path) {
                     Ok(_) => {
                         // Load tokenizer if available
-                        if let Some(tok_path) = &cli.tokenizer_path {
-                            if let Err(e) = engine.load_tokenizer(tok_path) {
-                                println!("  [Tokenizer load error: {}]", e);
-                                println!("  Prompt: {}", prompt);
-                                return Ok(());
-                            }
+                        if let Some(tok_path) = &cli.tokenizer_path
+                            && let Err(e) = engine.load_tokenizer(tok_path)
+                        {
+                            println!("  [Tokenizer load error: {}]", e);
+                            println!("  Prompt: {}", prompt);
+                            return Ok(());
                         }
 
                         println!("  [Running inference with loaded model...]");
@@ -590,8 +624,15 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
             }
         }
 
-        Commands::LatentExplore { prompt, layer, morph_with } => {
-            info!("Exploring latent space at layer {} for: '{}'", layer, prompt);
+        Commands::LatentExplore {
+            prompt,
+            layer,
+            morph_with,
+        } => {
+            info!(
+                "Exploring latent space at layer {} for: '{}'",
+                layer, prompt
+            );
             println!("Exploring latent space...");
             println!("  Prompt: {}", prompt);
             println!("  Layer: {}", layer);
@@ -599,40 +640,51 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
             let device = candle_core::Device::Cpu;
             let mut engine = mycelium_compute::InferenceEngine::new(device);
 
-            if let Some(model_path) = &cli.model_path {
-                if engine.load_model(model_path).is_ok() {
-                    println!("  [Running with latent extraction...]");
-                    match engine.extract_latent(&prompt, layer) {
-                        Ok(latent) => {
-                            println!("  Latent extracted: dim={}, layer={}", latent.dim, latent.layer_idx);
-                            println!("  First 8 values: {:?}", &latent.data[..8.min(latent.data.len())]);
-                        }
-                        Err(e) => println!("  Latent extraction error: {}", e),
+            if let Some(model_path) = &cli.model_path
+                && engine.load_model(model_path).is_ok()
+            {
+                println!("  [Running with latent extraction...]");
+                match engine.extract_latent(&prompt, layer) {
+                    Ok(latent) => {
+                        println!(
+                            "  Latent extracted: dim={}, layer={}",
+                            latent.dim, latent.layer_idx
+                        );
+                        println!(
+                            "  First 8 values: {:?}",
+                            &latent.data[..8.min(latent.data.len())]
+                        );
                     }
+                    Err(e) => println!("  Latent extraction error: {}", e),
                 }
             }
 
             if let Some(morph) = morph_with {
                 println!("  Morphing with: {}", morph);
                 // Extract latent from second prompt and lerp
-                if let Some(model_path) = &cli.model_path {
-                    if engine.load_model(model_path).is_ok() {
-                        match engine.extract_latent(&morph, layer) {
-                            Ok(latent2) => {
-                                // We need the first latent too — re-extract
-                                match engine.extract_latent(&prompt, layer) {
-                                    Ok(latent1) => {
-                                        let morphed = latent1.lerp(&latent2, 0.5);
-                                        println!("  Morphed latent: dim={}, similarity={:.4}",
-                                            morphed.dim,
-                                            latent1.cosine_similarity(&latent2));
-                                        println!("  First 8 values: {:?}", &morphed.data[..8.min(morphed.data.len())]);
-                                    }
-                                    Err(e) => println!("  Latent extraction error: {}", e),
+                if let Some(model_path) = &cli.model_path
+                    && engine.load_model(model_path).is_ok()
+                {
+                    match engine.extract_latent(&morph, layer) {
+                        Ok(latent2) => {
+                            // We need the first latent too — re-extract
+                            match engine.extract_latent(&prompt, layer) {
+                                Ok(latent1) => {
+                                    let morphed = latent1.lerp(&latent2, 0.5);
+                                    println!(
+                                        "  Morphed latent: dim={}, similarity={:.4}",
+                                        morphed.dim,
+                                        latent1.cosine_similarity(&latent2)
+                                    );
+                                    println!(
+                                        "  First 8 values: {:?}",
+                                        &morphed.data[..8.min(morphed.data.len())]
+                                    );
                                 }
+                                Err(e) => println!("  Latent extraction error: {}", e),
                             }
-                            Err(e) => println!("  Second latent extraction error: {}", e),
                         }
+                        Err(e) => println!("  Second latent extraction error: {}", e),
                     }
                 }
             }
@@ -645,7 +697,7 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
             let config = ModelConfig::minimax_m25();
             let caps = NodeCapabilities::auto_detect();
             let node_state = NodeCapacityState {
-                node_id: node_id.clone(),
+                node_id: *node_id,
                 available_vram_mb: caps.vram_mb,
                 available_ram_mb: caps.ram_mb,
                 layer_range: (0, config.num_layers),
@@ -659,7 +711,7 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
                 "create" => {
                     println!("  Creating spore from current model state...");
 
-                    let builder = SporeBuilder::new(config.clone(), node_id.clone())
+                    let builder = SporeBuilder::new(config.clone(), *node_id)
                         .layer_range(0, config.num_layers);
 
                     if let Some(model_path) = &cli.model_path {
@@ -668,7 +720,10 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
                             Ok(spore) => {
                                 let genome_size = spore.genome.data.len();
                                 println!("  Spore created: {} bytes (compressed)", genome_size);
-                                println!("  Layers: {}-{}, Experts: {:?}", 0, config.num_layers, spore.expert_ids);
+                                println!(
+                                    "  Layers: {}-{}, Experts: {:?}",
+                                    0, config.num_layers, spore.expert_ids
+                                );
                             }
                             Err(e) => {
                                 println!("  Spore creation failed: {}", e);
@@ -676,28 +731,32 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
                         }
                     } else {
                         // Create spore from config only (no real genome)
-                        let _genome = SporeGenome::new(
-                            Vec::new(),
-                            4,
-                            0,
+                        let _genome = SporeGenome::new(Vec::new(), 4, 0);
+                        println!(
+                            "  Spore config created (no weights): {} layers",
+                            config.num_layers
                         );
-                        println!("  Spore config created (no weights): {} layers", config.num_layers);
                         println!("  Use --model-path to create a spore with actual weights");
                     }
                 }
                 "list" => {
                     println!("  Checking for spores in substrate...");
-                    println!("  Node VRAM: {}MB, Available spores: {}, Received spores: {}",
+                    println!(
+                        "  Node VRAM: {}MB, Available spores: {}, Received spores: {}",
                         caps.vram_mb,
                         propagator.available_spore_count(),
-                        propagator.received_spore_count());
+                        propagator.received_spore_count()
+                    );
                 }
                 "germinate" => {
                     println!("  Looking for dormant spores to germinate...");
                     if caps.vram_mb >= 4096 {
                         println!("  Sufficient VRAM detected ({}MB)", caps.vram_mb);
                     } else {
-                        println!("  Low VRAM ({}MB) — germination may be limited", caps.vram_mb);
+                        println!(
+                            "  Low VRAM ({}MB) — germination may be limited",
+                            caps.vram_mb
+                        );
                     }
                 }
                 _ => {
@@ -710,8 +769,22 @@ async fn handle_command(command: Commands, cli: &Cli, node_id: &NodeId) -> Resul
         Commands::Status => {
             println!("Mycelium Node Status");
             println!("  Node ID: {}", node_id);
-            println!("  Model: {}", if cli.model_path.is_some() { "configured" } else { "not loaded" });
-            println!("  Tokenizer: {}", if cli.tokenizer_path.is_some() { "configured" } else { "not loaded" });
+            println!(
+                "  Model: {}",
+                if cli.model_path.is_some() {
+                    "configured"
+                } else {
+                    "not loaded"
+                }
+            );
+            println!(
+                "  Tokenizer: {}",
+                if cli.tokenizer_path.is_some() {
+                    "configured"
+                } else {
+                    "not loaded"
+                }
+            );
             println!("  P2P: enabled");
             println!("  LoRA rank: {}", mycelium_core::LORA_DEFAULT_RANK);
 

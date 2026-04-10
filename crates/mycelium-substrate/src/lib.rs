@@ -8,11 +8,9 @@
 //! - Efficient weight transfer between nodes
 //! - Memory-mapped file loading for large models
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use candle_core::quantized::gguf_file;
-use mycelium_core::{
-    GgufValue, ModelConfig, TensorMeta,
-};
+use mycelium_core::{GgufValue, ModelConfig, TensorMeta};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -141,7 +139,11 @@ impl SubstrateManager {
                 let tensor_meta = match parse_gguf_metadata(&path) {
                     Ok(m) => m,
                     Err(e) => {
-                        warn!("Failed to parse GGUF metadata for {}: {}", path.display(), e);
+                        warn!(
+                            "Failed to parse GGUF metadata for {}: {}",
+                            path.display(),
+                            e
+                        );
                         Vec::new()
                     }
                 };
@@ -198,7 +200,10 @@ impl SubstrateManager {
                     );
                     tokio::fs::remove_file(&dest).await?;
                 } else {
-                    info!("Model already exists with matching hash: {}", dest.display());
+                    info!(
+                        "Model already exists with matching hash: {}",
+                        dest.display()
+                    );
                     return Ok(dest);
                 }
             } else {
@@ -230,7 +235,8 @@ impl SubstrateManager {
             if actual != expected {
                 bail!(
                     "Downloaded data hash mismatch: expected {:.16}… got {:.16}…",
-                    expected, actual
+                    expected,
+                    actual
                 );
             }
         }
@@ -308,7 +314,7 @@ pub fn parse_gguf_metadata(path: &Path) -> Result<Vec<TensorMeta>> {
 
     let mut tensors = Vec::new();
     for (name, info) in &content.tensor_infos {
-        let shape: Vec<usize> = info.shape.dims().iter().map(|d| *d).collect();
+        let shape: Vec<usize> = info.shape.dims().to_vec();
         let _dtype = format!("{:?}", info.ggml_dtype);
 
         tensors.push(TensorMeta {
@@ -383,7 +389,11 @@ pub fn parse_gguf_metadata_full(path: &Path) -> Result<GgufMetadata> {
     let embedding_length = get_u("llama.embedding_length");
     let head_count = get_u("llama.attention.head_count");
     let head_count_kv = get_u("llama.attention.head_count_kv");
-    let head_dim = if head_count > 0 { embedding_length / head_count } else { 0 };
+    let head_dim = if head_count > 0 {
+        embedding_length / head_count
+    } else {
+        0
+    };
 
     // Build tensor map
     let mut tensor_shapes = HashMap::new();
@@ -401,7 +411,7 @@ pub fn parse_gguf_metadata_full(path: &Path) -> Result<GgufMetadata> {
 
     // Build raw metadata map
     let mut raw_metadata = HashMap::new();
-    for (key, _value) in &content.metadata {
+    for key in content.metadata.keys() {
         if let Some(v) = md_get(key) {
             raw_metadata.insert(key.clone(), v);
         }
@@ -451,16 +461,16 @@ fn extract_layer_range(tensors: &[TensorMeta]) -> (usize, usize) {
 /// Extract layer index from a tensor name.
 fn extract_layer_index(name: &str) -> Option<usize> {
     // Try "blk.N." format (GGUF standard)
-    if let Some(rest) = name.strip_prefix("blk.") {
-        if let Some(dot_pos) = rest.find('.') {
-            return rest[..dot_pos].parse().ok();
-        }
+    if let Some(rest) = name.strip_prefix("blk.")
+        && let Some(dot_pos) = rest.find('.')
+    {
+        return rest[..dot_pos].parse().ok();
     }
     // Try "layers.N." format (legacy GGML)
-    if let Some(rest) = name.strip_prefix("layers.") {
-        if let Some(dot_pos) = rest.find('.') {
-            return rest[..dot_pos].parse().ok();
-        }
+    if let Some(rest) = name.strip_prefix("layers.")
+        && let Some(dot_pos) = rest.find('.')
+    {
+        return rest[..dot_pos].parse().ok();
     }
     None
 }
@@ -484,24 +494,23 @@ pub async fn shard_gguf_by_layers(
     let mut output_paths = Vec::new();
 
     for (i, (start, end)) in shard_layer_ranges.iter().enumerate() {
-        let shard_name = format!(
-            "shard_{}_layers_{}_{}",
-            i,
-            start,
-            end
-        );
+        let shard_name = format!("shard_{}_layers_{}_{}", i, start, end);
         let output_path = output_dir.join(format!("{}.gguf", shard_name));
 
         // Extract only tensors belonging to the specified layer range
-        let _tensor_prefix = format!("blk.");
-        let mut shard_tensors: Vec<(&String, &candle_core::quantized::gguf_file::TensorInfo)> = Vec::new();
+        let _tensor_prefix = "blk.".to_string();
+        let mut shard_tensors: Vec<(&String, &candle_core::quantized::gguf_file::TensorInfo)> =
+            Vec::new();
 
         for (name, info) in &content.tensor_infos {
             if let Some(layer) = extract_layer_index(name) {
                 if layer >= *start && layer < *end {
                     shard_tensors.push((name, info));
                 }
-            } else if name.starts_with("token_embd") || name.starts_with("output") || name.ends_with("_norm.weight") {
+            } else if name.starts_with("token_embd")
+                || name.starts_with("output")
+                || name.ends_with("_norm.weight")
+            {
                 // Always include embeddings and norms for every shard
                 // (they're needed for input/output conversion)
                 shard_tensors.push((name, info));
@@ -509,13 +518,19 @@ pub async fn shard_gguf_by_layers(
         }
 
         if shard_tensors.is_empty() {
-            warn!("No tensors found for shard {} (layers {}-{}), skipping", i, start, end);
+            warn!(
+                "No tensors found for shard {} (layers {}-{}), skipping",
+                i, start, end
+            );
             continue;
         }
 
         info!(
             "Shard {} (layers {}-{}): {} tensors extracted",
-            i, start, end, shard_tensors.len()
+            i,
+            start,
+            end,
+            shard_tensors.len()
         );
 
         // For now, we still need to copy the full file since candle doesn't support
@@ -536,7 +551,11 @@ pub async fn shard_gguf_by_layers(
 
         info!(
             "Created shard {} for layers {}-{}: {} tensors, manifest at {}",
-            i, start, end, shard_tensors.len(), manifest_path.display()
+            i,
+            start,
+            end,
+            shard_tensors.len(),
+            manifest_path.display()
         );
         output_paths.push(output_path);
     }
@@ -551,6 +570,7 @@ pub async fn shard_gguf_by_layers(
 #[derive(Debug, Clone)]
 pub struct LatentMemoryStore {
     base_dir: PathBuf,
+    #[allow(dead_code)]
     max_entries: usize,
 }
 
@@ -617,11 +637,15 @@ impl LatentMemoryStore {
         let mut keys = Vec::new();
 
         while let Some(entry) = entries.next_entry().await? {
-            if entry.path().extension().map(|e| e == "json").unwrap_or(false) {
-                if let Some(name) = entry.file_name().to_str() {
-                    let key = name.trim_end_matches(".json");
-                    keys.push(key.to_string());
-                }
+            if entry
+                .path()
+                .extension()
+                .map(|e| e == "json")
+                .unwrap_or(false)
+                && let Some(name) = entry.file_name().to_str()
+            {
+                let key = name.trim_end_matches(".json");
+                keys.push(key.to_string());
             }
         }
 

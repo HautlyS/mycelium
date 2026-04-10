@@ -5,7 +5,7 @@
 //! - wgpu for GPU compute (native + WASM) — latent-space operations
 //! - Latent-space processing instead of token-by-token generation
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::{Embedding, Module};
@@ -39,7 +39,7 @@ pub enum LatentMode {
 
 /// Wrapper around quantized matmul with tracing.
 #[derive(Debug, Clone)]
-pub(crate) struct QMatMul {
+pub struct QMatMul {
     inner: candle_core::quantized::QMatMul,
 }
 
@@ -63,7 +63,11 @@ struct RmsNorm {
 }
 
 impl RmsNorm {
-    fn from_qtensor(qtensor: candle_core::quantized::QTensor, eps: f64, device: &Device) -> Result<Self> {
+    fn from_qtensor(
+        qtensor: candle_core::quantized::QTensor,
+        eps: f64,
+        device: &Device,
+    ) -> Result<Self> {
         let weight = qtensor.dequantize(device)?;
         Ok(Self { weight, eps })
     }
@@ -71,9 +75,7 @@ impl RmsNorm {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
         let dtype = xs.dtype();
         let xs_f = xs.to_dtype(DType::F32)?;
-        let norm = xs_f
-            .sqr()?
-            .sum_keepdim(candle_core::D::Minus1)?;
+        let norm = xs_f.sqr()?.sum_keepdim(candle_core::D::Minus1)?;
         let norm = (norm / xs_f.dim(candle_core::D::Minus1)? as f64)?;
         let norm = (norm + self.eps)?;
         let xs_normed = xs_f.broadcast_div(&norm.sqrt()?)?;
@@ -91,7 +93,7 @@ fn silu(xs: &Tensor) -> Result<Tensor> {
 // ─── Feed-Forward Network ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub(crate) struct Mlp {
+pub struct Mlp {
     feed_forward_w1: QMatMul,
     feed_forward_w2: QMatMul,
     feed_forward_w3: QMatMul,
@@ -101,7 +103,7 @@ impl Mlp {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
         let w1 = self.feed_forward_w1.forward(xs)?;
         let w3 = self.feed_forward_w3.forward(xs)?;
-        Ok(self.feed_forward_w2.forward(&(silu(&w1)? * w3)?)?)
+        self.feed_forward_w2.forward(&(silu(&w1)? * w3)?)
     }
 }
 
@@ -156,10 +158,8 @@ impl MlpOrMoe {
                         continue;
                     }
                     let selected_rws = &selected_rws[expert_idx];
-                    let expert_xs = xs.index_select(
-                        &Tensor::new(top_x.as_slice(), xs.device())?,
-                        0,
-                    )?;
+                    let expert_xs =
+                        xs.index_select(&Tensor::new(top_x.as_slice(), xs.device())?, 0)?;
                     let expert_ys = expert_layer.forward(&expert_xs)?;
                     let selected_rws = Tensor::new(selected_rws.as_slice(), xs.device())?
                         .reshape((selected_rws.len(), 1))?;
@@ -192,6 +192,7 @@ struct LayerWeights {
     head_dim: usize,
     cos: Tensor,
     sin: Tensor,
+    #[allow(dead_code)]
     neg_inf: Tensor,
     kv_cache: Option<(Tensor, Tensor)>,
     /// Optional LoRA adapter for this layer
@@ -217,13 +218,17 @@ impl LoRALayerWeights {
     /// Apply LoRA to a Q projection output.
     /// Computes: output = output + (x @ A^T) @ B^T * scaling
     fn apply_q(&self, xs: &Tensor, output: &Tensor) -> Result<Tensor> {
-        let lora_out = xs.matmul(&self.lora_a_q.t()?)?.matmul(&self.lora_b_q.t()?)?;
+        let lora_out = xs
+            .matmul(&self.lora_a_q.t()?)?
+            .matmul(&self.lora_b_q.t()?)?;
         Ok((output + (lora_out * self.scaling)?)?)
     }
 
     /// Apply LoRA to a V projection output.
     fn apply_v(&self, xs: &Tensor, output: &Tensor) -> Result<Tensor> {
-        let lora_out = xs.matmul(&self.lora_a_v.t()?)?.matmul(&self.lora_b_v.t()?)?;
+        let lora_out = xs
+            .matmul(&self.lora_a_v.t()?)?
+            .matmul(&self.lora_b_v.t()?)?;
         Ok((output + (lora_out * self.scaling)?)?)
     }
 }
@@ -327,7 +332,12 @@ impl LayerWeights {
 
 // ─── Rotary Embeddings ─────────────────────────────────────────────────────
 
-fn precompute_freqs_cis(head_dim: usize, freq_base: f32, max_seq_len: usize, device: &Device) -> Result<(Tensor, Tensor)> {
+fn precompute_freqs_cis(
+    head_dim: usize,
+    freq_base: f32,
+    max_seq_len: usize,
+    device: &Device,
+) -> Result<(Tensor, Tensor)> {
     let theta: Vec<_> = (0..head_dim)
         .step_by(2)
         .map(|i| 1f32 / freq_base.powf(i as f32 / head_dim as f32))
@@ -344,17 +354,24 @@ fn precompute_freqs_cis(head_dim: usize, freq_base: f32, max_seq_len: usize, dev
 
 fn apply_rotary_emb(q: &Tensor, cos: &Tensor, sin: &Tensor, seq_len: usize) -> Result<Tensor> {
     let (_b_sz, _n_head, _seq, head_dim) = q.dims4()?;
-    let cos = cos.i((..seq_len, ..))?.reshape((1, 1, seq_len, head_dim / 2, 1))?;
-    let sin = sin.i((..seq_len, ..))?.reshape((1, 1, seq_len, head_dim / 2, 1))?;
+    let cos = cos
+        .i((..seq_len, ..))?
+        .reshape((1, 1, seq_len, head_dim / 2, 1))?;
+    let sin = sin
+        .i((..seq_len, ..))?
+        .reshape((1, 1, seq_len, head_dim / 2, 1))?;
 
     let q = q.reshape((_b_sz, _n_head, _seq, head_dim / 2, 2))?;
     let q0 = q.i((.., .., .., .., 0))?;
     let q1 = q.i((.., .., .., .., 1))?;
 
-    let rotated = Tensor::stack(&[
-        &(q0.broadcast_mul(&cos)? - q1.broadcast_mul(&sin)?)?,
-        &(q0.broadcast_mul(&sin)? + q1.broadcast_mul(&cos)?)?,
-    ], candle_core::D::Minus1)?;
+    let rotated = Tensor::stack(
+        &[
+            &(q0.broadcast_mul(&cos)? - q1.broadcast_mul(&sin)?)?,
+            &(q0.broadcast_mul(&sin)? + q1.broadcast_mul(&cos)?)?,
+        ],
+        candle_core::D::Minus1,
+    )?;
 
     Ok(rotated.reshape((_b_sz, _n_head, _seq, head_dim))?)
 }
@@ -445,14 +462,20 @@ impl ModelWeights {
             let prefix = format!("blk.{layer_idx}");
             debug!("Loading layer {}/{}", layer_idx, block_count);
 
-            let attention_wq = content.tensor(&mut reader, &format!("{prefix}.attn_q.weight"), device)?;
-            let attention_wk = content.tensor(&mut reader, &format!("{prefix}.attn_k.weight"), device)?;
-            let attention_wv = content.tensor(&mut reader, &format!("{prefix}.attn_v.weight"), device)?;
-            let attention_wo = content.tensor(&mut reader, &format!("{prefix}.attn_output.weight"), device)?;
+            let attention_wq =
+                content.tensor(&mut reader, &format!("{prefix}.attn_q.weight"), device)?;
+            let attention_wk =
+                content.tensor(&mut reader, &format!("{prefix}.attn_k.weight"), device)?;
+            let attention_wv =
+                content.tensor(&mut reader, &format!("{prefix}.attn_v.weight"), device)?;
+            let attention_wo =
+                content.tensor(&mut reader, &format!("{prefix}.attn_output.weight"), device)?;
 
             let mlp_or_moe = if n_expert <= 1 {
-                let w1 = content.tensor(&mut reader, &format!("{prefix}.ffn_gate.weight"), device)?;
-                let w2 = content.tensor(&mut reader, &format!("{prefix}.ffn_down.weight"), device)?;
+                let w1 =
+                    content.tensor(&mut reader, &format!("{prefix}.ffn_gate.weight"), device)?;
+                let w2 =
+                    content.tensor(&mut reader, &format!("{prefix}.ffn_down.weight"), device)?;
                 let w3 = content.tensor(&mut reader, &format!("{prefix}.ffn_up.weight"), device)?;
                 MlpOrMoe::Mlp(Mlp {
                     feed_forward_w1: QMatMul::from_qtensor(w1)?,
@@ -460,12 +483,28 @@ impl ModelWeights {
                     feed_forward_w3: QMatMul::from_qtensor(w3)?,
                 })
             } else {
-                let gate_inp = content.tensor(&mut reader, &format!("{prefix}.ffn_gate_inp.weight"), device)?;
+                let gate_inp = content.tensor(
+                    &mut reader,
+                    &format!("{prefix}.ffn_gate_inp.weight"),
+                    device,
+                )?;
                 let mut experts = Vec::with_capacity(n_expert);
                 for i in 0..n_expert {
-                    let w1 = content.tensor(&mut reader, &format!("{prefix}.ffn_gate.{i}.weight"), device)?;
-                    let w2 = content.tensor(&mut reader, &format!("{prefix}.ffn_down.{i}.weight"), device)?;
-                    let w3 = content.tensor(&mut reader, &format!("{prefix}.ffn_up.{i}.weight"), device)?;
+                    let w1 = content.tensor(
+                        &mut reader,
+                        &format!("{prefix}.ffn_gate.{i}.weight"),
+                        device,
+                    )?;
+                    let w2 = content.tensor(
+                        &mut reader,
+                        &format!("{prefix}.ffn_down.{i}.weight"),
+                        device,
+                    )?;
+                    let w3 = content.tensor(
+                        &mut reader,
+                        &format!("{prefix}.ffn_up.{i}.weight"),
+                        device,
+                    )?;
                     experts.push(Mlp {
                         feed_forward_w1: QMatMul::from_qtensor(w1)?,
                         feed_forward_w2: QMatMul::from_qtensor(w2)?,
@@ -479,8 +518,10 @@ impl ModelWeights {
                 }
             };
 
-            let attention_norm = content.tensor(&mut reader, &format!("{prefix}.attn_norm.weight"), device)?;
-            let ffn_norm = content.tensor(&mut reader, &format!("{prefix}.ffn_norm.weight"), device)?;
+            let attention_norm =
+                content.tensor(&mut reader, &format!("{prefix}.attn_norm.weight"), device)?;
+            let ffn_norm =
+                content.tensor(&mut reader, &format!("{prefix}.ffn_norm.weight"), device)?;
 
             layers.push(LayerWeights {
                 attention_wq: QMatMul::from_qtensor(attention_wq)?,
@@ -503,7 +544,11 @@ impl ModelWeights {
 
         let config = ModelConfig::minimax_m25(); // Will be replaced with GgufConfig
 
-        info!("Model loaded: {} layers, {}d embed", layers.len(), embedding_length);
+        info!(
+            "Model loaded: {} layers, {}d embed",
+            layers.len(),
+            embedding_length
+        );
 
         Ok(Self {
             tok_embeddings: Embedding::new(tok_embeddings, embedding_length),
@@ -638,11 +683,11 @@ impl ModelWeights {
             generated.push(next);
 
             // Check for EOS token
-            if let Some(eos_id) = self.config.eos_token_id {
-                if next == eos_id {
-                    debug!("EOS token ({}) generated at step {}, stopping", eos_id, i);
-                    break;
-                }
+            if let Some(eos_id) = self.config.eos_token_id
+                && next == eos_id
+            {
+                debug!("EOS token ({}) generated at step {}, stopping", eos_id, i);
+                break;
             }
         }
 
@@ -656,7 +701,11 @@ impl ModelWeights {
         layer_idx: usize,
     ) -> Result<LatentVector> {
         if layer_idx >= self.layers.len() {
-            bail!("Layer index {} out of range (max {})", layer_idx, self.layers.len());
+            bail!(
+                "Layer index {} out of range (max {})",
+                layer_idx,
+                self.layers.len()
+            );
         }
 
         let tokens_tensor = Tensor::new(tokens, &self.device)?.reshape((1, tokens.len()))?;
@@ -690,14 +739,20 @@ impl ModelWeights {
 
             // Create LoRA A and B matrices for Q and V projections
             let device = &self.device;
-            let a_q_data = &adapter.a_weights.get(layer_idx)
+            let a_q_data = &adapter
+                .a_weights
+                .get(layer_idx)
                 .ok_or_else(|| anyhow::anyhow!("LoRA missing a_weights for layer {}", layer_idx))?;
-            let b_q_data = &adapter.b_weights.get(layer_idx)
+            let b_q_data = &adapter
+                .b_weights
+                .get(layer_idx)
                 .ok_or_else(|| anyhow::anyhow!("LoRA missing b_weights for layer {}", layer_idx))?;
 
             // A matrices: [rank, hidden_dim], B matrices: [hidden_dim, rank]
-            let lora_a_q = Tensor::from_slice(a_q_data, (rank, hidden_dim), device)?.to_dtype(DType::F32)?;
-            let lora_b_q = Tensor::from_slice(b_q_data, (hidden_dim, rank), device)?.to_dtype(DType::F32)?;
+            let lora_a_q =
+                Tensor::from_slice(a_q_data, (rank, hidden_dim), device)?.to_dtype(DType::F32)?;
+            let lora_b_q =
+                Tensor::from_slice(b_q_data, (hidden_dim, rank), device)?.to_dtype(DType::F32)?;
 
             // Use the same weights for V (simplified; in practice V would have separate weights)
             let lora_a_v = lora_a_q.clone();
@@ -711,8 +766,10 @@ impl ModelWeights {
                 scaling,
             });
 
-            info!("Applied LoRA adapter to layer {} (rank={}, alpha={}, scaling={})",
-                  layer_idx, adapter.rank, adapter.alpha, scaling);
+            info!(
+                "Applied LoRA adapter to layer {} (rank={}, alpha={}, scaling={})",
+                layer_idx, adapter.rank, adapter.alpha, scaling
+            );
         }
 
         Ok(())
@@ -790,7 +847,8 @@ fn sample_token(logits: &Tensor, temperature: f32, top_p: f32, pos: usize) -> Re
     let probs_vec = probs.to_vec1::<f32>()?;
 
     // Sort indices by probability descending for top-p filtering
-    let mut indexed: Vec<(usize, f32)> = probs_vec.iter().enumerate().map(|(i, &p)| (i, p)).collect();
+    let mut indexed: Vec<(usize, f32)> =
+        probs_vec.iter().enumerate().map(|(i, &p)| (i, p)).collect();
     indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
 
     // Find cutoff for top-p (nucleus) filtering
@@ -832,7 +890,11 @@ fn sample_token(logits: &Tensor, temperature: f32, top_p: f32, pos: usize) -> Re
 fn tensor_to_latent(tensor: &Tensor, layer_idx: usize) -> Result<LatentVector> {
     let flat = tensor.reshape((tensor.elem_count(),))?.to_vec1::<f32>()?;
     let _dim = flat.len();
-    Ok(LatentVector::from_vec(flat, layer_idx, uuid::Uuid::new_v4()))
+    Ok(LatentVector::from_vec(
+        flat,
+        layer_idx,
+        uuid::Uuid::new_v4(),
+    ))
 }
 
 // ─── Device Detection ──────────────────────────────────────────────────────
@@ -1036,8 +1098,9 @@ impl InferenceEngine {
 
     /// Load a tokenizer from a file (JSON format from HuggingFace tokenizers library).
     pub fn load_tokenizer(&mut self, path: &Path) -> Result<()> {
-        let tokenizer = tokenizers::Tokenizer::from_file(path)
-            .map_err(|e| anyhow::anyhow!("Failed to load tokenizer from {}: {}", path.display(), e))?;
+        let tokenizer = tokenizers::Tokenizer::from_file(path).map_err(|e| {
+            anyhow::anyhow!("Failed to load tokenizer from {}: {}", path.display(), e)
+        })?;
         self.tokenizer = Some(tokenizer);
         info!("InferenceEngine: tokenizer loaded from {}", path.display());
         Ok(())
@@ -1073,13 +1136,18 @@ impl InferenceEngine {
         max_tokens: usize,
         temperature: f32,
     ) -> Result<GenerateResult> {
-        let model = self.model.as_mut()
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded. Call load_model() first."))?;
-        let tokenizer = self.tokenizer.as_ref()
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No tokenizer loaded. Call load_tokenizer() first."))?;
 
         // Tokenize the prompt
-        let encoding = tokenizer.encode(prompt, false)
+        let encoding = tokenizer
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let prompt_tokens: Vec<TokenId> = encoding.get_ids().to_vec();
         let prompt_len = prompt_tokens.len();
@@ -1094,7 +1162,8 @@ impl InferenceEngine {
         let new_token_count = generated_tokens.len().saturating_sub(prompt_len);
         let new_tokens = &generated_tokens[prompt_len..];
 
-        let text = tokenizer.decode(new_tokens, false)
+        let text = tokenizer
+            .decode(new_tokens, false)
             .map_err(|e| anyhow::anyhow!("Detokenization failed: {}", e))?;
 
         Ok(GenerateResult {
@@ -1109,14 +1178,14 @@ impl InferenceEngine {
     /// This is the key capability for the self-tuning loop. It runs the
     /// forward pass through the model and captures the hidden state at
     /// the specified layer index.
-    pub fn extract_latent(
-        &mut self,
-        prompt: &str,
-        layer_idx: usize,
-    ) -> Result<LatentVector> {
-        let model = self.model.as_mut()
+    pub fn extract_latent(&mut self, prompt: &str, layer_idx: usize) -> Result<LatentVector> {
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded. Call load_model() first."))?;
-        let tokenizer = self.tokenizer.as_ref()
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No tokenizer loaded. Call load_tokenizer() first."))?;
 
         if layer_idx >= model.layer_count() {
@@ -1128,7 +1197,8 @@ impl InferenceEngine {
         }
 
         // Tokenize
-        let encoding = tokenizer.encode(prompt, false)
+        let encoding = tokenizer
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let tokens: Vec<TokenId> = encoding.get_ids().to_vec();
 
@@ -1139,17 +1209,19 @@ impl InferenceEngine {
     /// Extract latent vectors from all layers.
     ///
     /// Useful for comprehensive self-tuning analysis.
-    pub fn extract_all_latents(
-        &mut self,
-        prompt: &str,
-    ) -> Result<Vec<LatentVector>> {
-        let model = self.model.as_mut()
+    pub fn extract_all_latents(&mut self, prompt: &str) -> Result<Vec<LatentVector>> {
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded. Call load_model() first."))?;
-        let tokenizer = self.tokenizer.as_ref()
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No tokenizer loaded. Call load_tokenizer() first."))?;
 
         // Tokenize
-        let encoding = tokenizer.encode(prompt, false)
+        let encoding = tokenizer
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let tokens: Vec<TokenId> = encoding.get_ids().to_vec();
 
@@ -1169,7 +1241,9 @@ impl InferenceEngine {
 
     /// Apply a LoRA adapter to the model.
     pub fn apply_lora(&mut self, adapter: &LoRAAdapter) -> Result<()> {
-        let model = self.model.as_mut()
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded. Call load_model() first."))?;
         model.apply_lora(adapter)
     }
@@ -1207,13 +1281,18 @@ impl InferenceEngine {
         prompt: &str,
         layer_idx: usize,
     ) -> Result<(GenerateResult, Vec<LatentVector>)> {
-        let model = self.model.as_mut()
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded. Call load_model() first."))?;
-        let tokenizer = self.tokenizer.as_ref()
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No tokenizer loaded. Call load_tokenizer() first."))?;
 
         // Tokenize the prompt
-        let encoding = tokenizer.encode(prompt, false)
+        let encoding = tokenizer
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let prompt_tokens: Vec<TokenId> = encoding.get_ids().to_vec();
         let prompt_len = prompt_tokens.len();
@@ -1224,7 +1303,8 @@ impl InferenceEngine {
         let generated_tokens = model.generate(&prompt_tokens, max_tokens, temperature, 0.9)?;
         let new_token_count = generated_tokens.len().saturating_sub(prompt_len);
         let new_tokens = &generated_tokens[prompt_len..];
-        let text = tokenizer.decode(new_tokens, false)
+        let text = tokenizer
+            .decode(new_tokens, false)
             .map_err(|e| anyhow::anyhow!("Detokenization failed: {}", e))?;
 
         let generate_result = GenerateResult {
@@ -1254,6 +1334,7 @@ pub struct MoeInferenceEngine {
     model: Option<ModelWeights>,
     loaded_model: Option<LoadedModel>,
     tokenizer: Option<tokenizers::Tokenizer>,
+    #[allow(dead_code)]
     coordinator: DistributedCoordinator,
     device: Device,
 }
@@ -1262,7 +1343,7 @@ impl MoeInferenceEngine {
     /// Create a new MoE inference engine.
     pub fn new(config: ModelConfig, node_id: NodeId) -> Result<Self> {
         let device = detect_device()?;
-        let coordinator = DistributedCoordinator::new(config.clone(), node_id.clone());
+        let coordinator = DistributedCoordinator::new(config.clone(), node_id);
         Ok(Self {
             config,
             node_id,
@@ -1277,7 +1358,7 @@ impl MoeInferenceEngine {
 
     /// Create with a specific device.
     pub fn with_device(config: ModelConfig, node_id: NodeId, device: Device) -> Self {
-        let coordinator = DistributedCoordinator::new(config.clone(), node_id.clone());
+        let coordinator = DistributedCoordinator::new(config.clone(), node_id);
         Self {
             config,
             node_id,
@@ -1354,12 +1435,17 @@ impl MoeInferenceEngine {
         max_tokens: usize,
         temperature: f32,
     ) -> Result<GenerateResult> {
-        let model = self.model.as_mut()
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded"))?;
-        let tokenizer = self.tokenizer.as_ref()
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No tokenizer loaded"))?;
 
-        let encoding = tokenizer.encode(prompt, false)
+        let encoding = tokenizer
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let prompt_tokens: Vec<TokenId> = encoding.get_ids().to_vec();
         let prompt_len = prompt_tokens.len();
@@ -1368,7 +1454,8 @@ impl MoeInferenceEngine {
         let new_token_count = generated_tokens.len().saturating_sub(prompt_len);
         let new_tokens = &generated_tokens[prompt_len..];
 
-        let text = tokenizer.decode(new_tokens, false)
+        let text = tokenizer
+            .decode(new_tokens, false)
             .map_err(|e| anyhow::anyhow!("Detokenization failed: {}", e))?;
 
         Ok(GenerateResult {
@@ -1379,17 +1466,18 @@ impl MoeInferenceEngine {
     }
 
     /// Extract latent at a specific layer.
-    pub fn extract_latent(
-        &mut self,
-        prompt: &str,
-        layer_idx: usize,
-    ) -> Result<LatentVector> {
-        let model = self.model.as_mut()
+    pub fn extract_latent(&mut self, prompt: &str, layer_idx: usize) -> Result<LatentVector> {
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded"))?;
-        let tokenizer = self.tokenizer.as_ref()
+        let tokenizer = self
+            .tokenizer
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No tokenizer loaded"))?;
 
-        let encoding = tokenizer.encode(prompt, false)
+        let encoding = tokenizer
+            .encode(prompt, false)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
         let tokens: Vec<TokenId> = encoding.get_ids().to_vec();
 
@@ -1398,7 +1486,9 @@ impl MoeInferenceEngine {
 
     /// Apply a LoRA adapter.
     pub fn apply_lora(&mut self, adapter: &LoRAAdapter) -> Result<()> {
-        let model = self.model.as_mut()
+        let model = self
+            .model
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No model loaded"))?;
         model.apply_lora(adapter)
     }
@@ -1425,6 +1515,7 @@ impl MoeInferenceEngine {
 pub struct DistributedCoordinator {
     config: ModelConfig,
     topology: mycelium_core::TopologyMap,
+    #[allow(dead_code)]
     node_id: NodeId,
 }
 
@@ -1469,14 +1560,21 @@ impl DistributedCoordinator {
                 break;
             }
 
-            let total_compute: u32 = self.topology.nodes.iter().map(|(_, c)| c.compute_units).sum();
+            let total_compute: u32 = self
+                .topology
+                .nodes
+                .iter()
+                .map(|(_, c)| c.compute_units)
+                .sum();
             let expert_share = if total_compute > 0 {
                 cap.compute_units as f64 / total_compute as f64
             } else {
                 1.0 / self.topology.nodes.len() as f64
             };
             let experts_for_node = (expert_share * self.config.num_experts as f64).ceil() as usize;
-            let expert_ids: Vec<usize> = (0..self.config.num_experts).take(experts_for_node).collect();
+            let expert_ids: Vec<usize> = (0..self.config.num_experts)
+                .take(experts_for_node)
+                .collect();
 
             assignments.push(mycelium_core::LayerAssignment {
                 node_id: *node_id,
@@ -1493,7 +1591,9 @@ impl DistributedCoordinator {
     }
 
     pub fn find_expert_node(&self, expert_id: usize) -> Option<NodeId> {
-        self.topology.assignments.iter()
+        self.topology
+            .assignments
+            .iter()
             .find(|a| a.expert_ids.contains(&expert_id))
             .map(|a| a.node_id)
     }
@@ -1507,20 +1607,24 @@ impl DistributedCoordinator {
 // CRITICAL: This is the bridge between Hyphae (P2P) and Compute (inference).
 // It coordinates cross-node tensor operations during distributed inference.
 
-use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock, oneshot};
 use std::collections::HashMap as StdHashMap;
+use std::sync::Arc;
+use tokio::sync::{RwLock, mpsc, oneshot};
 
 /// Pending inference request tracking.
 #[derive(Debug)]
 struct PendingRequest {
     /// Original request ID
+    #[allow(dead_code)]
     request_id: uuid::Uuid,
     /// Sender for the response
+    #[allow(dead_code)]
     response_tx: oneshot::Sender<Result<LatentVector>>,
     /// Which layer this request is waiting for
+    #[allow(dead_code)]
     waiting_layer: usize,
     /// Timestamp when request was made
+    #[allow(dead_code)]
     created_at: std::time::Instant,
 }
 
@@ -1561,25 +1665,39 @@ pub enum RouterCommand {
 impl std::fmt::Debug for RouterCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IncomingLatent { source_node, layer_idx, latent, request_id } =>
-                f.debug_struct("IncomingLatent")
-                    .field("source_node", source_node)
-                    .field("layer_idx", layer_idx)
-                    .field("latent", latent)
-                    .field("request_id", request_id)
-                    .finish(),
-            Self::StartInference { request, .. } =>
-                f.debug_struct("StartInference").field("request", request).finish(),
-            Self::UpdateTopology(topology) =>
-                f.debug_tuple("UpdateTopology").field(topology).finish(),
-            Self::RegisterShard { layer_start, layer_end, expert_ids } =>
-                f.debug_struct("RegisterShard")
-                    .field("layer_start", layer_start)
-                    .field("layer_end", layer_end)
-                    .field("expert_ids", expert_ids)
-                    .finish(),
-            Self::SetTransport(_) =>
-                f.debug_struct("SetTransport").field("transport", &"<dyn LatentTransport>").finish(),
+            Self::IncomingLatent {
+                source_node,
+                layer_idx,
+                latent,
+                request_id,
+            } => f
+                .debug_struct("IncomingLatent")
+                .field("source_node", source_node)
+                .field("layer_idx", layer_idx)
+                .field("latent", latent)
+                .field("request_id", request_id)
+                .finish(),
+            Self::StartInference { request, .. } => f
+                .debug_struct("StartInference")
+                .field("request", request)
+                .finish(),
+            Self::UpdateTopology(topology) => {
+                f.debug_tuple("UpdateTopology").field(topology).finish()
+            }
+            Self::RegisterShard {
+                layer_start,
+                layer_end,
+                expert_ids,
+            } => f
+                .debug_struct("RegisterShard")
+                .field("layer_start", layer_start)
+                .field("layer_end", layer_end)
+                .field("expert_ids", expert_ids)
+                .finish(),
+            Self::SetTransport(_) => f
+                .debug_struct("SetTransport")
+                .field("transport", &"<dyn LatentTransport>")
+                .finish(),
         }
     }
 }
@@ -1600,16 +1718,22 @@ impl std::fmt::Debug for RouterCommand {
 /// 4. Aggregates results and returns
 pub struct DistributedTensorRouter {
     /// Node ID for this router
+    #[allow(dead_code)]
     node_id: NodeId,
     /// Model configuration
+    #[allow(dead_code)]
     config: ModelConfig,
     /// Local layer range this node handles
+    #[allow(dead_code)]
     local_layers: (usize, usize),
     /// Local expert IDs this node handles
+    #[allow(dead_code)]
     local_experts: Vec<usize>,
     /// Coordinator for topology and routing decisions
+    #[allow(dead_code)]
     coordinator: Arc<RwLock<DistributedCoordinator>>,
     /// Pending requests waiting for remote results
+    #[allow(dead_code)]
     pending: Arc<RwLock<StdHashMap<uuid::Uuid, PendingRequest>>>,
     /// Channel for sending commands to the router task
     cmd_tx: mpsc::Sender<RouterCommand>,
@@ -1623,25 +1747,21 @@ pub struct DistributedTensorRouter {
 
 impl DistributedTensorRouter {
     /// Create a new distributed tensor router.
-    pub fn new(
-        node_id: NodeId,
-        config: ModelConfig,
-        coordinator: DistributedCoordinator,
-    ) -> Self {
+    pub fn new(node_id: NodeId, config: ModelConfig, coordinator: DistributedCoordinator) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel(256);
         let coordinator = Arc::new(RwLock::new(coordinator));
         let pending = Arc::new(RwLock::new(StdHashMap::new()));
         let local_model = Arc::new(RwLock::new(None));
         let stream_manager = Arc::new(LatentStreamManager::new(LatentStreamConfig::default()));
-        
+
         // Spawn the router task
         let coordinator_clone = coordinator.clone();
         let pending_clone = pending.clone();
         let local_model_clone = local_model.clone();
         let config_clone = config.clone();
-        let node_id_clone = node_id.clone();
+        let node_id_clone = node_id;
         let stream_manager_clone = stream_manager.clone();
-        
+
         tokio::spawn(async move {
             Self::router_task(
                 cmd_rx,
@@ -1652,9 +1772,10 @@ impl DistributedTensorRouter {
                 node_id_clone,
                 None, // transport set later via command
                 stream_manager_clone,
-            ).await;
+            )
+            .await;
         });
-        
+
         Self {
             node_id,
             config,
@@ -1668,50 +1789,63 @@ impl DistributedTensorRouter {
             stream_manager,
         }
     }
-    
+
     /// Set the transport for remote communication.
     pub fn set_transport(&mut self, transport: Arc<dyn LatentTransport>) {
         self.transport = Some(transport);
     }
-    
+
     /// Get a sender for sending commands to this router.
     pub fn command_sender(&self) -> mpsc::Sender<RouterCommand> {
         self.cmd_tx.clone()
     }
-    
+
     /// Set the local model weights.
     pub async fn set_local_model(&self, model: ModelWeights) {
         let mut guard = self.local_model.write().await;
         *guard = Some(model);
     }
-    
+
     /// Register which layers this node handles locally.
-    pub async fn register_local_shard(&self, layer_start: usize, layer_end: usize, expert_ids: Vec<usize>) {
+    pub async fn register_local_shard(
+        &self,
+        layer_start: usize,
+        layer_end: usize,
+        expert_ids: Vec<usize>,
+    ) {
         // Send command to update shard info
-        let _ = self.cmd_tx.send(RouterCommand::RegisterShard {
-            layer_start,
-            layer_end,
-            expert_ids,
-        }).await;
+        let _ = self
+            .cmd_tx
+            .send(RouterCommand::RegisterShard {
+                layer_start,
+                layer_end,
+                expert_ids,
+            })
+            .await;
     }
 
     /// Get a reference to the latent stream manager.
     pub fn stream_manager(&self) -> &Arc<LatentStreamManager> {
         &self.stream_manager
     }
-    
+
     /// Run a distributed inference request.
     pub async fn infer(&self, request: InferenceRequest) -> Result<InferenceResponse> {
         let (response_tx, response_rx) = oneshot::channel();
-        
-        self.cmd_tx.send(RouterCommand::StartInference {
-            request,
-            response_tx,
-        }).await.map_err(|e| anyhow::anyhow!("Router channel closed: {}", e))?;
-        
-        response_rx.await.map_err(|e| anyhow::anyhow!("Response channel error: {}", e))?
+
+        self.cmd_tx
+            .send(RouterCommand::StartInference {
+                request,
+                response_tx,
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Router channel closed: {}", e))?;
+
+        response_rx
+            .await
+            .map_err(|e| anyhow::anyhow!("Response channel error: {}", e))?
     }
-    
+
     /// Handle an incoming latent from another node.
     pub async fn handle_incoming_latent(
         &self,
@@ -1720,15 +1854,19 @@ impl DistributedTensorRouter {
         latent: LatentVector,
         request_id: uuid::Uuid,
     ) -> Result<()> {
-        self.cmd_tx.send(RouterCommand::IncomingLatent {
-            source_node,
-            layer_idx,
-            latent,
-            request_id,
-        }).await.map_err(|e| anyhow::anyhow!("Router channel closed: {}", e))
+        self.cmd_tx
+            .send(RouterCommand::IncomingLatent {
+                source_node,
+                layer_idx,
+                latent,
+                request_id,
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("Router channel closed: {}", e))
     }
-    
+
     /// Main router task - processes commands and coordinates inference.
+    #[allow(clippy::too_many_arguments)]
     async fn router_task(
         mut cmd_rx: mpsc::Receiver<RouterCommand>,
         coordinator: Arc<RwLock<DistributedCoordinator>>,
@@ -1742,20 +1880,26 @@ impl DistributedTensorRouter {
         let mut local_layers = (0usize, 0usize);
         let mut local_experts = Vec::new();
         let mut current_transport = transport;
-        
+
         info!("DistributedTensorRouter started for node {}", node_id);
-        
+
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
-                RouterCommand::RegisterShard { layer_start, layer_end, expert_ids } => {
+                RouterCommand::RegisterShard {
+                    layer_start,
+                    layer_end,
+                    expert_ids,
+                } => {
                     local_layers = (layer_start, layer_end);
                     local_experts = expert_ids;
                     info!(
                         "Router registered local shard: layers {}-{}, {} experts",
-                        layer_start, layer_end, local_experts.len()
+                        layer_start,
+                        layer_end,
+                        local_experts.len()
                     );
                 }
-                
+
                 RouterCommand::UpdateTopology(topology) => {
                     let mut coord = coordinator.write().await;
                     coord.update_topology(topology);
@@ -1765,8 +1909,11 @@ impl DistributedTensorRouter {
                     current_transport = Some(new_transport);
                     info!("Transport set for distributed tensor routing");
                 }
-                
-                RouterCommand::StartInference { request, response_tx } => {
+
+                RouterCommand::StartInference {
+                    request,
+                    response_tx,
+                } => {
                     // Handle inference request with streaming support
                     let result = Self::handle_inference_request(
                         &config,
@@ -1779,17 +1926,23 @@ impl DistributedTensorRouter {
                         node_id,
                         &current_transport,
                         &stream_manager,
-                    ).await;
-                    
+                    )
+                    .await;
+
                     let _ = response_tx.send(result);
                 }
-                
-                RouterCommand::IncomingLatent { source_node, layer_idx, latent, request_id } => {
+
+                RouterCommand::IncomingLatent {
+                    source_node,
+                    layer_idx,
+                    latent,
+                    request_id,
+                } => {
                     debug!(
                         "Received latent from {} at layer {} for request {}",
                         source_node, layer_idx, request_id
                     );
-                    
+
                     // Process this latent through our local layers
                     let result = Self::process_incoming_latent(
                         &config,
@@ -1803,8 +1956,9 @@ impl DistributedTensorRouter {
                         node_id,
                         &current_transport,
                         &stream_manager,
-                    ).await;
-                    
+                    )
+                    .await;
+
                     if let Ok(Some(layer_result)) = result {
                         info!(
                             "Processed incoming latent: layer {} -> {}, is_final={}",
@@ -1814,11 +1968,12 @@ impl DistributedTensorRouter {
                 }
             }
         }
-        
+
         info!("DistributedTensorRouter stopped for node {}", node_id);
     }
-    
+
     /// Handle a new inference request.
+    #[allow(clippy::too_many_arguments)]
     async fn handle_inference_request(
         config: &ModelConfig,
         local_layers: &(usize, usize),
@@ -1833,16 +1988,16 @@ impl DistributedTensorRouter {
     ) -> Result<InferenceResponse> {
         let start = std::time::Instant::now();
         let request_id = request.id;
-        
+
         info!(
             "Starting distributed inference for request {} (latent_mode={})",
             request_id, request.latent_mode
         );
-        
+
         // Check if we have a local model
         let mut model_guard = local_model.write().await;
         let has_local_model = model_guard.is_some();
-        
+
         if !has_local_model && local_layers.0 == 0 && local_layers.1 == 0 {
             // No local model and no layers assigned
             return Ok(InferenceResponse {
@@ -1853,7 +2008,7 @@ impl DistributedTensorRouter {
                 latency_ms: start.elapsed().as_millis() as u64,
             });
         }
-        
+
         // If we have the first layers, start inference
         if local_layers.0 == 0 && has_local_model {
             // This node has the embedding layer and first layers
@@ -1891,7 +2046,8 @@ impl DistributedTensorRouter {
                 let mut latents_collected = Vec::new();
 
                 // Forward pass through local layers only
-                let tokens_tensor = Tensor::from_slice(&all_tokens, (1, all_tokens.len()), &model.device)?;
+                let tokens_tensor =
+                    Tensor::from_slice(&all_tokens, (1, all_tokens.len()), &model.device)?;
                 let mut xs = model.tok_embeddings.forward(&tokens_tensor)?;
 
                 let device = model.device.clone();
@@ -1922,12 +2078,15 @@ impl DistributedTensorRouter {
                     let token_ids = last_token.argmax(candle_core::D::Minus1)?;
                     let token_id = token_ids.to_scalar::<u32>()?;
 
-                    let generated_text = tokenizer.decode(&[token_id])
+                    let generated_text = tokenizer
+                        .decode(&[token_id])
                         .unwrap_or_else(|_| format!("[token {}]", token_id));
 
                     info!(
                         "Node {} completed inference: {} tokens -> '{}'",
-                        node_id, all_tokens.len(), generated_text
+                        node_id,
+                        all_tokens.len(),
+                        generated_text
                     );
 
                     return Ok(InferenceResponse {
@@ -1952,27 +2111,35 @@ impl DistributedTensorRouter {
                         // Stream latents to next node instead of sending individually
                         if let Some(tr) = transport {
                             // Open a stream to the next node
-                            let stream_id = match tr.open_stream(
-                                next,
-                                local_layers.1,
-                                config.num_layers,
-                                64, // buffer size
-                            ).await {
+                            let stream_id = match tr
+                                .open_stream(
+                                    next,
+                                    local_layers.1,
+                                    config.num_layers,
+                                    64, // buffer size
+                                )
+                                .await
+                            {
                                 Ok(sid) => sid,
                                 Err(e) => {
                                     warn!("Failed to open stream to node {}: {}", next, e);
                                     // Fallback to individual send
                                     if let Some(last_latent) = latents_collected.last() {
-                                        let _ = tr.send_latent(
-                                            next,
-                                            local_layers.1,
-                                            last_latent.clone(),
-                                            request_id,
-                                        ).await;
+                                        let _ = tr
+                                            .send_latent(
+                                                next,
+                                                local_layers.1,
+                                                last_latent.clone(),
+                                                request_id,
+                                            )
+                                            .await;
                                     }
                                     return Ok(InferenceResponse {
                                         id: request_id,
-                                        text: Some(format!("[node {} partial, stream open failed, fallback used]", node_id)),
+                                        text: Some(format!(
+                                            "[node {} partial, stream open failed, fallback used]",
+                                            node_id
+                                        )),
                                         latents: latents_collected,
                                         participating_nodes: vec![node_id],
                                         latency_ms: start.elapsed().as_millis() as u64,
@@ -1982,7 +2149,9 @@ impl DistributedTensorRouter {
 
                             // Send all collected latents through the stream
                             for (seq, latent) in latents_collected.iter().enumerate() {
-                                if let Err(e) = tr.send_stream(stream_id, seq as u64, latent.clone()).await {
+                                if let Err(e) =
+                                    tr.send_stream(stream_id, seq as u64, latent.clone()).await
+                                {
                                     warn!("Failed to send latent {} through stream: {}", seq, e);
                                 }
                             }
@@ -1990,7 +2159,9 @@ impl DistributedTensorRouter {
                             // Send the last latent (at the boundary layer) through the stream
                             if let Some(last_latent) = latents_collected.last() {
                                 let seq = latents_collected.len() as u64;
-                                if let Err(e) = tr.send_stream(stream_id, seq, last_latent.clone()).await {
+                                if let Err(e) =
+                                    tr.send_stream(stream_id, seq, last_latent.clone()).await
+                                {
                                     warn!("Failed to send final latent through stream: {}", e);
                                 }
                             }
@@ -2006,7 +2177,10 @@ impl DistributedTensorRouter {
 
                     return Ok(InferenceResponse {
                         id: request_id,
-                        text: Some(format!("[node {} partial inference complete, streaming to next]", node_id)),
+                        text: Some(format!(
+                            "[node {} partial inference complete, streaming to next]",
+                            node_id
+                        )),
                         latents: latents_collected,
                         participating_nodes: vec![node_id],
                         latency_ms: start.elapsed().as_millis() as u64,
@@ -2015,14 +2189,17 @@ impl DistributedTensorRouter {
             } else {
                 return Ok(InferenceResponse {
                     id: request_id,
-                    text: Some(format!("[node {} has layers 0-{} but model not loaded]", node_id, local_layers.1)),
+                    text: Some(format!(
+                        "[node {} has layers 0-{} but model not loaded]",
+                        node_id, local_layers.1
+                    )),
                     latents: Vec::new(),
                     participating_nodes: vec![node_id],
                     latency_ms: start.elapsed().as_millis() as u64,
                 });
             }
         }
-        
+
         // This node is a mid-tier or leaf node
         // It will receive latents from upstream and process them
         Ok(InferenceResponse {
@@ -2033,8 +2210,9 @@ impl DistributedTensorRouter {
             latency_ms: start.elapsed().as_millis() as u64,
         })
     }
-    
+
     /// Process an incoming latent from another node.
+    #[allow(clippy::too_many_arguments)]
     async fn process_incoming_latent(
         config: &ModelConfig,
         local_layers: &(usize, usize),
@@ -2056,7 +2234,7 @@ impl DistributedTensorRouter {
             );
             return Ok(None);
         }
-        
+
         let mut model_guard = local_model.write().await;
         if let Some(model) = model_guard.as_mut() {
             // Process through local layers using actual tensor computation
@@ -2071,7 +2249,8 @@ impl DistributedTensorRouter {
 
             // Process through each local layer starting from input_layer
             let mut current_tensor = tensor;
-            let end_layer = (input_layer + (local_layers.1 - local_layers.0)).min(config.num_layers);
+            let end_layer =
+                (input_layer + (local_layers.1 - local_layers.0)).min(config.num_layers);
 
             for layer_idx in input_layer..end_layer.min(model.layers.len()) {
                 current_tensor = model.layers[layer_idx].forward(&current_tensor, None)?;
@@ -2089,18 +2268,23 @@ impl DistributedTensorRouter {
                 let next_node = coord.find_layer_node(end_layer);
                 drop(coord);
 
-                if let Some(next) = next_node {
-                    if let Some(tr) = transport {
-                        // Open stream, send latent, close stream
-                        if let Ok(stream_id) = tr.open_stream(next, end_layer, config.num_layers, 32).await {
-                            if let Err(e) = tr.send_stream(stream_id, 0, transformed_latent.clone()).await {
-                                warn!("Failed to stream latent to next node {}: {}", next, e);
-                            }
-                            let _ = tr.close_stream(stream_id, "layer processed").await;
-                            info!("Streamed processed latent to node {}", next);
-                        } else {
-                            warn!("Failed to open stream to node {}", next);
+                if let Some(next) = next_node
+                    && let Some(tr) = transport
+                {
+                    // Open stream, send latent, close stream
+                    if let Ok(stream_id) =
+                        tr.open_stream(next, end_layer, config.num_layers, 32).await
+                    {
+                        if let Err(e) = tr
+                            .send_stream(stream_id, 0, transformed_latent.clone())
+                            .await
+                        {
+                            warn!("Failed to stream latent to next node {}: {}", next, e);
                         }
+                        let _ = tr.close_stream(stream_id, "layer processed").await;
+                        info!("Streamed processed latent to node {}", next);
+                    } else {
+                        warn!("Failed to open stream to node {}", next);
                     }
                 }
             }
@@ -2130,7 +2314,7 @@ pub trait LatentTransport: Send + Sync {
         latent: LatentVector,
         request_id: uuid::Uuid,
     ) -> Result<()>;
-    
+
     /// Broadcast a latent to all nodes that might need it.
     async fn broadcast_latent(
         &self,
@@ -2159,11 +2343,7 @@ pub trait LatentTransport: Send + Sync {
     ) -> Result<()>;
 
     /// Close a latent stream, signaling no more data will be sent.
-    async fn close_stream(
-        &self,
-        stream_id: uuid::Uuid,
-        reason: &str,
-    ) -> Result<()>;
+    async fn close_stream(&self, stream_id: uuid::Uuid, reason: &str) -> Result<()>;
 }
 
 // ─── Network-Aware MoE Expert Router ────────────────────────────────────────
@@ -2211,14 +2391,19 @@ pub struct ExpertRouteResult {
 #[derive(Debug)]
 struct PendingExpertRequest {
     /// Request ID
+    #[allow(dead_code)]
     request_id: uuid::Uuid,
     /// Expert ID being requested
+    #[allow(dead_code)]
     expert_id: usize,
     /// Input latent
+    #[allow(dead_code)]
     input_latent: LatentVector,
     /// When the request was made
+    #[allow(dead_code)]
     created_at: std::time::Instant,
     /// Response channel
+    #[allow(dead_code)]
     response_tx: oneshot::Sender<Result<LatentVector>>,
 }
 
@@ -2281,15 +2466,19 @@ impl NetworkMoERouter {
             gate_weights,
         }
     }
-    
+
     /// Set the transport for remote communication.
     pub fn set_transport(&mut self, transport: Arc<dyn LatentTransport>) {
         self.transport = Some(transport);
     }
-    
+
     /// Register local experts.
     pub fn register_local_experts(&mut self, expert_ids: Vec<usize>, weights: Vec<Mlp>) {
-        assert_eq!(expert_ids.len(), weights.len(), "Expert IDs and weights must match");
+        assert_eq!(
+            expert_ids.len(),
+            weights.len(),
+            "Expert IDs and weights must match"
+        );
         self.local_experts = expert_ids;
         self.local_expert_weights = weights;
         info!(
@@ -2298,7 +2487,7 @@ impl NetworkMoERouter {
             &self.local_experts[..self.local_experts.len().min(10)]
         );
     }
-    
+
     /// Route a latent through the top-k experts.
     /// Returns aggregated output from all selected experts.
     pub async fn route(
@@ -2308,26 +2497,28 @@ impl NetworkMoERouter {
         request_id: uuid::Uuid,
     ) -> Result<LatentVector> {
         let start = std::time::Instant::now();
-        
+
         // 1. Compute routing weights (which experts to use)
         let routing_weights = self.compute_routing_weights(latent)?;
-        
+
         // 2. Select top-k experts
         let top_k = self.config.top_k_experts;
         let selected = self.select_top_k_experts(&routing_weights, top_k);
-        
+
         debug!(
             "Routing latent to {} experts: {:?}",
             selected.len(),
             selected.iter().map(|(id, w)| (*id, *w)).collect::<Vec<_>>()
         );
-        
+
         // 3. Process each expert (local or remote)
         let mut expert_results = Vec::with_capacity(selected.len());
-        
+
         for (expert_id, weight) in selected {
-            let result = self.process_expert(expert_id, latent, layer_idx, request_id).await;
-            
+            let result = self
+                .process_expert(expert_id, latent, layer_idx, request_id)
+                .await;
+
             match result {
                 Ok(expert_output) => {
                     // Weight the expert output by routing weight
@@ -2340,27 +2531,27 @@ impl NetworkMoERouter {
                 }
             }
         }
-        
+
         // 4. Aggregate all expert outputs
         if expert_results.is_empty() {
             bail!("All experts failed for layer {}", layer_idx);
         }
-        
+
         // Sum all weighted expert outputs
         let mut aggregated = expert_results.remove(0);
         for output in expert_results {
             aggregated = aggregated.add(&output);
         }
-        
+
         let elapsed = start.elapsed().as_micros();
         debug!(
             "MoE routing complete: {} experts, {}µs",
             self.config.top_k_experts, elapsed
         );
-        
+
         Ok(aggregated)
     }
-    
+
     /// Compute routing weights for all experts.
     fn compute_routing_weights(&self, latent: &LatentVector) -> Result<Vec<f32>> {
         // Compute actual router gate using the gate weights matrix
@@ -2389,8 +2580,7 @@ impl NetworkMoERouter {
                 let routing_weights = candle_nn::ops::softmax_last_dim(&logits_f32)?;
 
                 // Extract weights as vec
-                let weights_flat = routing_weights.reshape((num_experts,))?
-                    .to_vec1::<f32>()?;
+                let weights_flat = routing_weights.reshape((num_experts,))?.to_vec1::<f32>()?;
 
                 debug!(
                     "Computed routing weights for {} experts",
@@ -2420,20 +2610,19 @@ impl NetworkMoERouter {
             }
         }
     }
-    
+
     /// Select top-k experts from routing weights.
     fn select_top_k_experts(&self, weights: &[f32], k: usize) -> Vec<(usize, f32)> {
-        let mut indexed: Vec<(usize, f32)> = weights.iter().enumerate()
-            .map(|(i, &w)| (i, w))
-            .collect();
-        
+        let mut indexed: Vec<(usize, f32)> =
+            weights.iter().enumerate().map(|(i, &w)| (i, w)).collect();
+
         // Sort by weight descending
         indexed.sort_by(|a, b| b.1.total_cmp(&a.1));
-        
+
         // Take top-k and normalize
         let top_k: Vec<_> = indexed.into_iter().take(k).collect();
         let sum: f32 = top_k.iter().map(|(_, w)| w).sum();
-        
+
         if sum > 0.0 {
             top_k.into_iter().map(|(id, w)| (id, w / sum)).collect()
         } else {
@@ -2443,50 +2632,47 @@ impl NetworkMoERouter {
                 .collect()
         }
     }
-    
+
     /// Process a single expert (local or remote).
     async fn process_expert(
         &self,
         expert_id: usize,
         latent: &LatentVector,
         layer_idx: usize,
-        request_id: uuid::Uuid,
+        _request_id: uuid::Uuid,
     ) -> Result<LatentVector> {
         let start = std::time::Instant::now();
-        
+
         // Check if we have this expert locally
         if let Some(local_idx) = self.local_experts.iter().position(|&e| e == expert_id) {
             // Process locally
             let output = self.process_local_expert(local_idx, latent)?;
-            
+
             debug!(
                 "Expert {} processed locally in {}µs",
                 expert_id,
                 start.elapsed().as_micros()
             );
-            
+
             return Ok(output);
         }
-        
+
         // Need to route to remote node
         if let Some(transport) = &self.transport {
             // Find which node has this expert
             let coord = self.coordinator.read().await;
             let target_node = coord.find_expert_node(expert_id);
             drop(coord);
-            
+
             if let Some(target) = target_node {
                 if target == self.node_id {
                     // This shouldn't happen, but handle gracefully
                     warn!("Expert {} is supposed to be local but not found", expert_id);
                     return Ok(latent.clone());
                 }
-                
+
                 // Send to remote node with proper response waiting
-                debug!(
-                    "Routing expert {} to remote node {}",
-                    expert_id, target
-                );
+                debug!("Routing expert {} to remote node {}", expert_id, target);
 
                 let expert_request_id = uuid::Uuid::new_v4();
                 let (response_tx, response_rx) = tokio::sync::oneshot::channel();
@@ -2507,41 +2693,41 @@ impl NetworkMoERouter {
                 }
 
                 // Send the latent to the remote node
-                transport.send_latent(
-                    target,
-                    layer_idx,
-                    latent.clone(),
-                    expert_request_id,
-                ).await?;
+                transport
+                    .send_latent(target, layer_idx, latent.clone(), expert_request_id)
+                    .await?;
 
                 // Wait for response with timeout
                 let timeout_ms = self.router_config.request_timeout_ms;
                 let result = match tokio::time::timeout(
                     std::time::Duration::from_millis(timeout_ms),
-                    response_rx
-                ).await {
-                    Ok(Ok(response)) => {
-                        match response {
-                            Ok(output_latent) => {
-                                debug!(
-                                    "Remote expert {} response received in {}µs",
-                                    expert_id,
-                                    std::time::Instant::now().elapsed().as_micros()
-                                );
-                                return Ok(output_latent);
-                            }
-                            Err(e) => {
-                                warn!("Remote expert {} returned error: {}", expert_id, e);
-                                None
-                            }
+                    response_rx,
+                )
+                .await
+                {
+                    Ok(Ok(response)) => match response {
+                        Ok(output_latent) => {
+                            debug!(
+                                "Remote expert {} response received in {}µs",
+                                expert_id,
+                                std::time::Instant::now().elapsed().as_micros()
+                            );
+                            return Ok(output_latent);
                         }
-                    }
+                        Err(e) => {
+                            warn!("Remote expert {} returned error: {}", expert_id, e);
+                            None
+                        }
+                    },
                     Ok(Err(e)) => {
                         warn!("Remote expert {} response channel closed: {}", expert_id, e);
                         None
                     }
                     Err(_) => {
-                        warn!("Remote expert {} timed out after {}ms", expert_id, timeout_ms);
+                        warn!(
+                            "Remote expert {} timed out after {}ms",
+                            expert_id, timeout_ms
+                        );
                         // Clean up pending request
                         let mut pending = self.pending_requests.write().await;
                         pending.remove(&expert_request_id);
@@ -2555,7 +2741,7 @@ impl NetworkMoERouter {
                 }
             }
         }
-        
+
         // No transport or no node found - fallback
         if self.router_config.fallback_to_local {
             // Use the first local expert as fallback
@@ -2567,12 +2753,16 @@ impl NetworkMoERouter {
                 return self.process_local_expert(0, latent);
             }
         }
-        
+
         bail!("Expert {} not available and no fallback", expert_id)
     }
-    
+
     /// Process a latent through a local expert.
-    fn process_local_expert(&self, local_idx: usize, latent: &LatentVector) -> Result<LatentVector> {
+    fn process_local_expert(
+        &self,
+        local_idx: usize,
+        latent: &LatentVector,
+    ) -> Result<LatentVector> {
         if local_idx >= self.local_expert_weights.len() {
             bail!("Local expert index {} out of range", local_idx);
         }
@@ -2663,9 +2853,9 @@ impl LatentStreamSender {
 
     /// Try to send without waiting. Returns an error if the buffer is full.
     pub fn try_send(&self, latent: LatentVector) -> Result<()> {
-        self.tx
-            .try_send(latent)
-            .map_err(|e| anyhow::anyhow!("latent stream {} send failed: {}", self.meta.stream_id, e))
+        self.tx.try_send(latent).map_err(|e| {
+            anyhow::anyhow!("latent stream {} send failed: {}", self.meta.stream_id, e)
+        })
     }
 
     /// Returns the remaining capacity of the underlying channel.
@@ -2688,9 +2878,9 @@ impl LatentStreamReceiver {
 
     /// Try to receive without blocking.
     pub fn try_recv(&mut self) -> Result<LatentVector> {
-        self.rx
-            .try_recv()
-            .map_err(|e| anyhow::anyhow!("latent stream {} recv failed: {}", self.meta.stream_id, e))
+        self.rx.try_recv().map_err(|e| {
+            anyhow::anyhow!("latent stream {} recv failed: {}", self.meta.stream_id, e)
+        })
     }
 }
 
@@ -2828,11 +3018,11 @@ impl LatentMemoryStore {
             let mut lru_idx = 0;
             let mut lru_time = std::time::Instant::now();
             for (i, k) in self.insertion_order.iter().enumerate() {
-                if let Some(e) = self.entries.get(k) {
-                    if e.last_accessed < lru_time {
-                        lru_time = e.last_accessed;
-                        lru_idx = i;
-                    }
+                if let Some(e) = self.entries.get(k)
+                    && e.last_accessed < lru_time
+                {
+                    lru_time = e.last_accessed;
+                    lru_idx = i;
                 }
             }
             let evicted_key = self.insertion_order.remove(lru_idx);
@@ -2986,7 +3176,12 @@ impl PipelinePlan {
         let mut offset = 0usize;
 
         for (idx, (node_id, num_layers)) in assignments.into_iter().enumerate() {
-            stages.push(PipelineStage::new(idx, offset, offset + num_layers, node_id));
+            stages.push(PipelineStage::new(
+                idx,
+                offset,
+                offset + num_layers,
+                node_id,
+            ));
             offset += num_layers;
         }
 
@@ -2999,7 +3194,10 @@ impl PipelinePlan {
     /// Create a uniform pipeline plan that splits `total_layers` as evenly
     /// as possible across the given nodes.
     pub fn uniform(nodes: &[NodeId], total_layers: usize) -> Self {
-        assert!(!nodes.is_empty(), "Need at least one node for pipeline plan");
+        assert!(
+            !nodes.is_empty(),
+            "Need at least one node for pipeline plan"
+        );
 
         let base = total_layers / nodes.len();
         let remainder = total_layers % nodes.len();
@@ -3081,6 +3279,7 @@ pub struct PipelineStageStats {
 }
 
 impl PipelineStageStats {
+    #[allow(dead_code)]
     fn new(stage_idx: usize) -> Self {
         Self {
             stage_idx,
@@ -3233,6 +3432,7 @@ impl PipelineExecutor {
     ///
     /// If the stage lives on the local node, we run it against the local model.
     /// Otherwise we delegate to the transport layer.
+    #[allow(dead_code)]
     async fn process_stage(
         &self,
         stage: &PipelineStage,
@@ -3260,6 +3460,7 @@ impl PipelineExecutor {
     }
 
     /// Execute a stage locally using the local model weights.
+    #[allow(dead_code)]
     async fn process_local_stage(
         &self,
         stage: &PipelineStage,
@@ -3293,11 +3494,8 @@ impl PipelineExecutor {
         }
 
         let output_data: Vec<f32> = current.reshape((latent_dim,))?.to_vec1()?;
-        let output_latent = LatentVector::from_vec(
-            output_data,
-            stage.end_layer,
-            micro_batch.latent.stream_id,
-        );
+        let output_latent =
+            LatentVector::from_vec(output_data, stage.end_layer, micro_batch.latent.stream_id);
 
         Ok(MicroBatch {
             micro_batch_idx: micro_batch.micro_batch_idx,
@@ -3311,6 +3509,7 @@ impl PipelineExecutor {
     /// Sends the latent to the remote node and waits for a response with timeout.
     /// The remote node is expected to process the latent through its assigned layers
     /// and return the result.
+    #[allow(dead_code)]
     async fn process_remote_stage(
         &self,
         stage: &PipelineStage,
@@ -3382,7 +3581,11 @@ impl PipelineExecutor {
 
         // Per-stage stats collectors (one Mutex<Vec<u64>> per stage).
         let stage_latencies: Vec<Arc<tokio::sync::Mutex<Vec<u64>>>> = (0..num_stages)
-            .map(|_| Arc::new(tokio::sync::Mutex::new(Vec::with_capacity(num_micro_batches))))
+            .map(|_| {
+                Arc::new(tokio::sync::Mutex::new(Vec::with_capacity(
+                    num_micro_batches,
+                )))
+            })
             .collect();
 
         // Build a chain of async channels:  sender[s] -> receiver[s] feeds stage s.
@@ -3458,7 +3661,8 @@ impl PipelineExecutor {
                                 let mut current = input;
                                 for layer_idx in stage.start_layer..stage.end_layer {
                                     if layer_idx < model.layers.len() {
-                                        current = model.layers[layer_idx].forward(&current, None)?;
+                                        current =
+                                            model.layers[layer_idx].forward(&current, None)?;
                                     }
                                 }
                                 let output_data: Vec<f32> =
@@ -3488,13 +3692,14 @@ impl PipelineExecutor {
                         } else {
                             // ---------- remote processing ----------
                             if let Some(tr) = &transport {
-                                let _ = tr.send_latent(
-                                    stage.node_id,
-                                    stage.start_layer,
-                                    mb.latent.clone(),
-                                    mb.request_id,
-                                )
-                                .await;
+                                let _ = tr
+                                    .send_latent(
+                                        stage.node_id,
+                                        stage.start_layer,
+                                        mb.latent.clone(),
+                                        mb.request_id,
+                                    )
+                                    .await;
                             }
                             Ok(MicroBatch {
                                 micro_batch_idx: mb.micro_batch_idx,
@@ -3744,7 +3949,9 @@ mod tests {
     fn test_latent_mode_variants() {
         let standard = LatentMode::Standard;
         let morph = LatentMode::LatentMorph { t: 0.5 };
-        let blend = LatentMode::LatentBlend { weights: vec![0.3, 0.7] };
+        let blend = LatentMode::LatentBlend {
+            weights: vec![0.3, 0.7],
+        };
         let tuning = LatentMode::SelfTuning;
 
         assert_eq!(standard, LatentMode::Standard);
@@ -3759,7 +3966,10 @@ mod tests {
         let weight = Tensor::ones(&[4], DType::F32, &device).unwrap();
         let norm = RmsNorm { weight, eps: 1e-6 };
         // RmsNorm expects 3D input [batch, seq, hidden_dim]
-        let input = Tensor::new(&[1.0f32, 2.0, 3.0, 4.0], &device).unwrap().reshape((1, 1, 4)).unwrap();
+        let input = Tensor::new(&[1.0f32, 2.0, 3.0, 4.0], &device)
+            .unwrap()
+            .reshape((1, 1, 4))
+            .unwrap();
         let output = norm.forward(&input).unwrap();
         assert_eq!(output.dims(), &[1, 1, 4]);
     }
@@ -3784,7 +3994,7 @@ mod tests {
     async fn test_distributed_tensor_router_creation() {
         let config = ModelConfig::minimax_m25();
         let node_id = NodeId::new();
-        let coordinator = DistributedCoordinator::new(config.clone(), node_id.clone());
+        let coordinator = DistributedCoordinator::new(config.clone(), node_id);
         let router = DistributedTensorRouter::new(node_id, config, coordinator);
         // Router should be created successfully
         assert!(router.command_sender().capacity() > 0);
@@ -3794,12 +4004,12 @@ mod tests {
     async fn test_router_infer_no_model() {
         let config = ModelConfig::minimax_m25();
         let node_id = NodeId::new();
-        let coordinator = DistributedCoordinator::new(config.clone(), node_id.clone());
+        let coordinator = DistributedCoordinator::new(config.clone(), node_id);
         let router = DistributedTensorRouter::new(node_id.clone(), config, coordinator);
-        
+
         // Register no local layers (coordinator mode)
         router.register_local_shard(0, 0, Vec::new()).await;
-        
+
         let request = InferenceRequest {
             id: uuid::Uuid::new_v4(),
             prompt: "test prompt".into(),
@@ -3808,7 +4018,7 @@ mod tests {
             top_p: 0.9,
             latent_mode: false,
         };
-        
+
         let response = router.infer(request).await.unwrap();
         assert!(response.text.unwrap().contains("coordinator-only"));
     }
@@ -3834,7 +4044,7 @@ mod tests {
             layer_end: 16,
             expert_ids: vec![0, 1, 2, 3],
         };
-        
+
         // Commands should be debug-printable
         let _ = format!("{:?}", cmd1);
         let _ = format!("{:?}", cmd2);
@@ -3853,18 +4063,27 @@ mod tests {
         let weights = vec![0.1, 0.3, 0.4, 0.05, 0.15];
         let model_config = ModelConfig::minimax_m25();
         let node_id = NodeId::new();
-        let coordinator = Arc::new(RwLock::new(
-            DistributedCoordinator::new(model_config.clone(), node_id)
-        ));
-        
+        let coordinator = Arc::new(RwLock::new(DistributedCoordinator::new(
+            model_config.clone(),
+            node_id,
+        )));
+
         // Create a dummy gate weights tensor
         let device = Device::Cpu;
         let gate_data = vec![0.0f32; model_config.hidden_dim * model_config.num_experts];
-        let gate_tensor = Tensor::from_slice(&gate_data, 
-            (model_config.hidden_dim, model_config.num_experts), &device).unwrap();
-        let gate_qtensor = candle_core::quantized::QTensor::quantize(&gate_tensor, candle_core::quantized::GgmlDType::F32).unwrap();
+        let gate_tensor = Tensor::from_slice(
+            &gate_data,
+            (model_config.hidden_dim, model_config.num_experts),
+            &device,
+        )
+        .unwrap();
+        let gate_qtensor = candle_core::quantized::QTensor::quantize(
+            &gate_tensor,
+            candle_core::quantized::GgmlDType::F32,
+        )
+        .unwrap();
         let gate_weights = QMatMul::from_qtensor(gate_qtensor).unwrap();
-        
+
         let router = NetworkMoERouter::new(
             node_id,
             model_config,
@@ -3872,15 +4091,15 @@ mod tests {
             coordinator,
             gate_weights,
         );
-        
+
         let selected = router.select_top_k_experts(&weights, 3);
         assert_eq!(selected.len(), 3);
-        
+
         // Should select indices 2, 1, 4 (highest weights)
         assert_eq!(selected[0].0, 2);
         assert_eq!(selected[1].0, 1);
         assert_eq!(selected[2].0, 4);
-        
+
         // Weights should be normalized
         let sum: f32 = selected.iter().map(|(_, w)| w).sum();
         assert!((sum - 1.0).abs() < 0.001);
@@ -3890,18 +4109,27 @@ mod tests {
     async fn test_moe_router_local_expert() {
         let model_config = ModelConfig::minimax_m25();
         let node_id = NodeId::new();
-        let coordinator = Arc::new(RwLock::new(
-            DistributedCoordinator::new(model_config.clone(), node_id.clone())
-        ));
-        
+        let coordinator = Arc::new(RwLock::new(DistributedCoordinator::new(
+            model_config.clone(),
+            node_id.clone(),
+        )));
+
         // Create dummy gate weights
         let device = Device::Cpu;
         let gate_data = vec![0.0f32; model_config.hidden_dim * model_config.num_experts];
-        let gate_tensor = Tensor::from_slice(&gate_data, 
-            (model_config.hidden_dim, model_config.num_experts), &device).unwrap();
-        let gate_qtensor = candle_core::quantized::QTensor::quantize(&gate_tensor, candle_core::quantized::GgmlDType::F32).unwrap();
+        let gate_tensor = Tensor::from_slice(
+            &gate_data,
+            (model_config.hidden_dim, model_config.num_experts),
+            &device,
+        )
+        .unwrap();
+        let gate_qtensor = candle_core::quantized::QTensor::quantize(
+            &gate_tensor,
+            candle_core::quantized::GgmlDType::F32,
+        )
+        .unwrap();
         let gate_weights = QMatMul::from_qtensor(gate_qtensor).unwrap();
-        
+
         let mut router = NetworkMoERouter::new(
             node_id,
             model_config.clone(),
@@ -3909,32 +4137,59 @@ mod tests {
             coordinator,
             gate_weights,
         );
-        
+
         // Register local experts with dummy weights
         let dummy_mlp = Mlp {
             feed_forward_w1: {
-                let w = Tensor::zeros((model_config.intermediate_dim, model_config.hidden_dim), DType::F32, &device).unwrap();
-                let qw = candle_core::quantized::QTensor::quantize(&w, candle_core::quantized::GgmlDType::F32).unwrap();
+                let w = Tensor::zeros(
+                    (model_config.intermediate_dim, model_config.hidden_dim),
+                    DType::F32,
+                    &device,
+                )
+                .unwrap();
+                let qw = candle_core::quantized::QTensor::quantize(
+                    &w,
+                    candle_core::quantized::GgmlDType::F32,
+                )
+                .unwrap();
                 QMatMul::from_qtensor(qw).unwrap()
             },
             feed_forward_w2: {
-                let w = Tensor::zeros((model_config.hidden_dim, model_config.intermediate_dim), DType::F32, &device).unwrap();
-                let qw = candle_core::quantized::QTensor::quantize(&w, candle_core::quantized::GgmlDType::F32).unwrap();
+                let w = Tensor::zeros(
+                    (model_config.hidden_dim, model_config.intermediate_dim),
+                    DType::F32,
+                    &device,
+                )
+                .unwrap();
+                let qw = candle_core::quantized::QTensor::quantize(
+                    &w,
+                    candle_core::quantized::GgmlDType::F32,
+                )
+                .unwrap();
                 QMatMul::from_qtensor(qw).unwrap()
             },
             feed_forward_w3: {
-                let w = Tensor::zeros((model_config.intermediate_dim, model_config.hidden_dim), DType::F32, &device).unwrap();
-                let qw = candle_core::quantized::QTensor::quantize(&w, candle_core::quantized::GgmlDType::F32).unwrap();
+                let w = Tensor::zeros(
+                    (model_config.intermediate_dim, model_config.hidden_dim),
+                    DType::F32,
+                    &device,
+                )
+                .unwrap();
+                let qw = candle_core::quantized::QTensor::quantize(
+                    &w,
+                    candle_core::quantized::GgmlDType::F32,
+                )
+                .unwrap();
                 QMatMul::from_qtensor(qw).unwrap()
             },
         };
-        
+
         router.register_local_experts(vec![0, 1, 2, 3], vec![dummy_mlp.clone(); 4]);
-        
+
         // Test routing
         let latent = LatentVector::zeros(model_config.hidden_dim, 0, uuid::Uuid::new_v4());
         let result = router.route(&latent, 0, uuid::Uuid::new_v4()).await;
-        
+
         // Should succeed with local experts
         assert!(result.is_ok());
     }
@@ -4109,7 +4364,11 @@ mod tests {
         let rid = uuid::Uuid::new_v4();
 
         let result = executor.execute_pipeline(&latent, rid).await;
-        assert!(result.is_ok(), "Pipeline should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Pipeline should succeed: {:?}",
+            result.err()
+        );
 
         let result = result.unwrap();
         assert_eq!(result.outputs.len(), 2); // 2 micro-batches
@@ -4192,9 +4451,15 @@ mod tests {
         assert_eq!(manager.active_stream_count().await, 2);
 
         // Send on first stream
-        sender1.send(LatentVector::zeros(64, 0, sender1.meta.stream_id)).await.unwrap();
+        sender1
+            .send(LatentVector::zeros(64, 0, sender1.meta.stream_id))
+            .await
+            .unwrap();
         // Send on second stream
-        sender2.send(LatentVector::zeros(64, 1, sender2.meta.stream_id)).await.unwrap();
+        sender2
+            .send(LatentVector::zeros(64, 1, sender2.meta.stream_id))
+            .await
+            .unwrap();
 
         // Receivers should get their respective data
         let r1 = receiver1.recv().await.unwrap();
@@ -4234,8 +4499,12 @@ mod tests {
         let (sender, _receiver) = manager.create_stream(source, target).await;
 
         // Fill the buffer
-        sender.try_send(LatentVector::zeros(64, 0, sender.meta.stream_id)).unwrap();
-        sender.try_send(LatentVector::zeros(64, 0, sender.meta.stream_id)).unwrap();
+        sender
+            .try_send(LatentVector::zeros(64, 0, sender.meta.stream_id))
+            .unwrap();
+        sender
+            .try_send(LatentVector::zeros(64, 0, sender.meta.stream_id))
+            .unwrap();
 
         // Next try_send should fail (buffer full)
         let result = sender.try_send(LatentVector::zeros(64, 0, sender.meta.stream_id));
@@ -4246,7 +4515,7 @@ mod tests {
     async fn test_distributed_tensor_router_has_stream_manager() {
         let config = ModelConfig::minimax_m25();
         let node_id = NodeId::new();
-        let coordinator = DistributedCoordinator::new(config.clone(), node_id.clone());
+        let coordinator = DistributedCoordinator::new(config.clone(), node_id);
         let router = DistributedTensorRouter::new(node_id, config, coordinator);
 
         // Router should have a stream manager

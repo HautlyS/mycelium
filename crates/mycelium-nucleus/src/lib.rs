@@ -25,12 +25,15 @@
 //! ```
 
 use anyhow::Result;
-use mycelium_core::{HyphaeMessage, LatentVector, LoRAAdapter, ModelConfig, NodeId, LORA_DEFAULT_RANK, FEDAVG_MIN_PARTICIPANTS};
+use chrono::{DateTime, Utc};
+use mycelium_core::{
+    FEDAVG_MIN_PARTICIPANTS, HyphaeMessage, LORA_DEFAULT_RANK, LatentVector, LoRAAdapter,
+    ModelConfig, NodeId,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 // ─── Training Sample (defined here, not in core) ───────────────────────────
 
@@ -123,7 +126,13 @@ pub struct FedAvgState {
 
 impl FedAvgState {
     /// Add a peer's gradient delta.
-    pub fn add_peer_delta(&mut self, layer_idx: usize, delta: Vec<f32>, version: u64, node_id: NodeId) {
+    pub fn add_peer_delta(
+        &mut self,
+        layer_idx: usize,
+        delta: Vec<f32>,
+        version: u64,
+        node_id: NodeId,
+    ) {
         self.peer_deltas
             .entry(node_id)
             .or_default()
@@ -134,8 +143,14 @@ impl FedAvgState {
 
     /// Process a GradientDelta HyphaeMessage.
     pub fn add_gradient_message(&mut self, msg: &HyphaeMessage) {
-        if let HyphaeMessage::GradientDelta { layer_idx, delta, version, node_id } = msg {
-            self.add_peer_delta(*layer_idx, delta.clone(), *version, node_id.clone());
+        if let HyphaeMessage::GradientDelta {
+            layer_idx,
+            delta,
+            version,
+            node_id,
+        } = msg
+        {
+            self.add_peer_delta(*layer_idx, delta.clone(), *version, *node_id);
         }
     }
 
@@ -183,7 +198,8 @@ impl FedAvgState {
 
         info!(
             "Federated averaging complete: version {}, {} layers",
-            self.global_version, averaged.len()
+            self.global_version,
+            averaged.len()
         );
 
         Some(averaged)
@@ -236,7 +252,11 @@ impl Nucleus {
     }
 
     /// Create a new nucleus with custom training config.
-    pub fn with_train_config(config: ModelConfig, node_id: NodeId, train_config: TrainingConfig) -> Self {
+    pub fn with_train_config(
+        config: ModelConfig,
+        node_id: NodeId,
+        train_config: TrainingConfig,
+    ) -> Self {
         let rank = train_config.lora_rank;
         let hidden_dim = config.hidden_dim;
 
@@ -250,9 +270,7 @@ impl Nucleus {
             .collect();
 
         // B: (hidden_dim × rank) — zero init (standard LoRA)
-        let b_weights: Vec<Vec<f32>> = (0..hidden_dim)
-            .map(|_| vec![0.0f32; rank])
-            .collect();
+        let b_weights: Vec<Vec<f32>> = (0..hidden_dim).map(|_| vec![0.0f32; rank]).collect();
 
         let adapter = LoRAAdapter {
             rank,
@@ -278,7 +296,10 @@ impl Nucleus {
             step: 0,
             running_loss: f64::MAX,
             best_loss: f64::MAX,
-            m_a, v_a, m_b, v_b,
+            m_a,
+            v_a,
+            m_b,
+            v_b,
         }
     }
 
@@ -291,8 +312,15 @@ impl Nucleus {
 
         if self.experience_buffer.len() >= self.train_config.max_buffer_size {
             // Remove lowest-reward sample (prioritized replay)
-            if let Some(min_idx) = self.experience_buffer.iter().enumerate()
-                .min_by(|a, b| a.1.reward.partial_cmp(&b.1.reward).unwrap_or(std::cmp::Ordering::Equal))
+            if let Some(min_idx) = self
+                .experience_buffer
+                .iter()
+                .enumerate()
+                .min_by(|a, b| {
+                    a.1.reward
+                        .partial_cmp(&b.1.reward)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .map(|(i, _)| i)
             {
                 if sample.reward > self.experience_buffer[min_idx].reward {
@@ -320,7 +348,10 @@ impl Nucleus {
             return Ok(Vec::new());
         }
 
-        let batch_size = self.train_config.batch_size.min(self.experience_buffer.len());
+        let batch_size = self
+            .train_config
+            .batch_size
+            .min(self.experience_buffer.len());
 
         // 1. Sample mini-batch (prioritized by reward)
         let batch = self.sample_batch(batch_size);
@@ -381,9 +412,11 @@ impl Nucleus {
             let scale = 2.0 * alpha_over_rank * sample.reward;
 
             // Gradient for A
+            #[allow(clippy::needless_range_loop)]
             for r in 0..rank {
                 // Compute Σ_i residual[i] * B[i][r]
                 let mut sum_residual_b = 0.0f32;
+                #[allow(clippy::needless_range_loop)]
                 for i in 0..output_dim.min(self.adapter.b_weights.len()) {
                     sum_residual_b += residual[i] * self.adapter.b_weights[i][r];
                 }
@@ -403,10 +436,14 @@ impl Nucleus {
         // Average gradients over batch
         let n = batch.len() as f32;
         for row in grad_a.iter_mut() {
-            for v in row.iter_mut() { *v /= n; }
+            for v in row.iter_mut() {
+                *v /= n;
+            }
         }
         for row in grad_b.iter_mut() {
-            for v in row.iter_mut() { *v /= n; }
+            for v in row.iter_mut() {
+                *v /= n;
+            }
         }
 
         let avg_loss = total_loss / batch.len() as f64;
@@ -442,7 +479,7 @@ impl Nucleus {
                 layer_idx,
                 delta: flat_delta,
                 version: self.step,
-                node_id: self.node_id.clone(),
+                node_id: self.node_id,
             });
         }
 
@@ -453,7 +490,10 @@ impl Nucleus {
 
         debug!(
             "Training step {}: loss={:.6}, running={:.6}, {} deltas",
-            self.step, avg_loss, self.running_loss, deltas.len()
+            self.step,
+            avg_loss,
+            self.running_loss,
+            deltas.len()
         );
 
         Ok(deltas)
@@ -471,7 +511,9 @@ impl Nucleus {
         // Update A weights
         for r in 0..self.adapter.a_weights.len() {
             for j in 0..self.adapter.a_weights[r].len() {
-                if r >= grad_a.len() || j >= grad_a[r].len() { continue; }
+                if r >= grad_a.len() || j >= grad_a[r].len() {
+                    continue;
+                }
                 let g = grad_a[r][j];
 
                 // First moment
@@ -482,21 +524,25 @@ impl Nucleus {
                 let m_hat = self.m_a[r][j] / (1.0 - beta1.powf(t));
                 let v_hat = self.v_a[r][j] / (1.0 - beta2.powf(t));
                 // AdamW update (weight decay is NOT scaled by lr)
-                self.adapter.a_weights[r][j] -= lr * (m_hat / (v_hat.sqrt() + eps) + weight_decay * self.adapter.a_weights[r][j]);
+                self.adapter.a_weights[r][j] -= lr
+                    * (m_hat / (v_hat.sqrt() + eps) + weight_decay * self.adapter.a_weights[r][j]);
             }
         }
 
         // Update B weights
         for i in 0..self.adapter.b_weights.len() {
             for r in 0..self.adapter.b_weights[i].len() {
-                if i >= grad_b.len() || r >= grad_b[i].len() { continue; }
+                if i >= grad_b.len() || r >= grad_b[i].len() {
+                    continue;
+                }
                 let g = grad_b[i][r];
 
                 self.m_b[i][r] = beta1 * self.m_b[i][r] + (1.0 - beta1) * g;
                 self.v_b[i][r] = beta2 * self.v_b[i][r] + (1.0 - beta2) * g * g;
                 let m_hat = self.m_b[i][r] / (1.0 - beta1.powf(t));
                 let v_hat = self.v_b[i][r] / (1.0 - beta2.powf(t));
-                self.adapter.b_weights[i][r] -= lr * (m_hat / (v_hat.sqrt() + eps) + weight_decay * self.adapter.b_weights[i][r]);
+                self.adapter.b_weights[i][r] -= lr
+                    * (m_hat / (v_hat.sqrt() + eps) + weight_decay * self.adapter.b_weights[i][r]);
             }
         }
     }
@@ -508,7 +554,11 @@ impl Nucleus {
             return self.experience_buffer.iter().collect();
         }
 
-        let total_reward: f32 = self.experience_buffer.iter().map(|s| s.reward.max(0.01)).sum();
+        let total_reward: f32 = self
+            .experience_buffer
+            .iter()
+            .map(|s| s.reward.max(0.01))
+            .sum();
         let mut selected = Vec::with_capacity(batch_size);
         let mut rng = rand::thread_rng();
 
@@ -567,8 +617,12 @@ impl Nucleus {
             for r in 0..rows.min(rank) {
                 for j in 0..hidden_dim {
                     let flat_idx = r * hidden_dim + j;
-                    if flat_idx < delta.len() && r < self.adapter.a_weights.len() && j < self.adapter.a_weights[r].len() {
-                        self.adapter.a_weights[r][j] += delta[flat_idx] * self.adapter.alpha / rank as f32;
+                    if flat_idx < delta.len()
+                        && r < self.adapter.a_weights.len()
+                        && j < self.adapter.a_weights[r].len()
+                    {
+                        self.adapter.a_weights[r][j] +=
+                            delta[flat_idx] * self.adapter.alpha / rank as f32;
                     }
                 }
             }
@@ -910,7 +964,11 @@ impl RewardSignal {
             }
             RewardSignal::CompletionAccepted { .. } => 1.0,
             RewardSignal::CompletionRejected { .. } => 0.0,
-            RewardSignal::LatentQuality { coherence, diversity, .. } => {
+            RewardSignal::LatentQuality {
+                coherence,
+                diversity,
+                ..
+            } => {
                 // Geometric mean so both must be decent
                 (coherence.clamp(0.0, 1.0) * diversity.clamp(0.0, 1.0)).sqrt()
             }
@@ -997,10 +1055,7 @@ impl RewardAggregator {
             self.insertion_order.push(request_id);
         }
 
-        self.history
-            .entry(request_id)
-            .or_default()
-            .push(signal);
+        self.history.entry(request_id).or_default().push(signal);
 
         // Evict oldest entries if we exceed max history
         while self.insertion_order.len() > self.config.max_history {
@@ -1216,10 +1271,7 @@ impl UsageTracker {
 
         for request_id in completed_ids {
             if let Some(record) = self.pending_requests.remove(&request_id) {
-                let reward = self
-                    .aggregator
-                    .compute_reward(&request_id)
-                    .unwrap_or(0.5); // default neutral reward
+                let reward = self.aggregator.compute_reward(&request_id).unwrap_or(0.5); // default neutral reward
 
                 if let Some(output_latent) = record.output_latent {
                     samples.push(TrainingSample {

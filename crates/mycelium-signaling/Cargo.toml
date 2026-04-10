@@ -1,0 +1,22 @@
+[package]
+name = "mycelium-signaling"
+version.workspace = true
+edition.workspace = true
+description = "WebSocket signaling server for Mycelium WebRTC peer discovery"
+license.workspace = true
+
+[[bin]]
+name = "mycelium-signaling"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+futures = "0.3"

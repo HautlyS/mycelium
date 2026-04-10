@@ -9,21 +9,25 @@
 //!
 //! Build with: `wasm-pack build --target web crates/mycelium-web`
 
+#![allow(clippy::await_holding_lock)]
+
 use mycelium_core::{LatentVector, ModelConfig};
 use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
-use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor,
-    Maintain, MapMode, ShaderModuleDescriptor, ShaderSource,
-};
 use wasm_bindgen::prelude::*;
+use wgpu::{
+    BufferUsages, CommandEncoderDescriptor, ComputePassDescriptor, Maintain, MapMode,
+    ShaderModuleDescriptor, ShaderSource,
+    util::{BufferInitDescriptor, DeviceExt},
+};
 
 // ─── WebGPU Compute Engine ─────────────────────────────────────────────────
 
 /// WebGPU resources for compute operations.
 struct GpuContext {
+    #[allow(dead_code)]
     instance: wgpu::Instance,
+    #[allow(dead_code)]
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -68,7 +72,14 @@ impl GpuContext {
 pub struct MyceliumWeb {
     gpu: Option<Arc<Mutex<GpuContext>>>,
     config: ModelConfig,
+    #[allow(dead_code)]
     shader_modules: std::collections::HashMap<String, wgpu::ShaderModule>,
+}
+
+impl Default for MyceliumWeb {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[wasm_bindgen]
@@ -77,7 +88,7 @@ impl MyceliumWeb {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         // Set up wasm logger
-        let _ = console_error_panic_hook::set_once();
+        console_error_panic_hook::set_once();
 
         info!("Mycelium Web node created");
         Self {
@@ -235,7 +246,9 @@ impl MyceliumWeb {
     /// Generate a random latent vector (for testing).
     pub fn random_latent(&self, dim: usize, _layer: usize) -> Result<Vec<f32>, JsError> {
         use js_sys::Math;
-        Ok((0..dim).map(|_| (Math::random() as f32) * 2.0 - 1.0).collect())
+        Ok((0..dim)
+            .map(|_| (Math::random() as f32) * 2.0 - 1.0)
+            .collect())
     }
 
     /// Get the status of the WebGPU node.
@@ -282,7 +295,7 @@ impl MyceliumWeb {
 
         let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("lerp_output"),
-            size: (data_a.len() * std::mem::size_of::<f32>()) as u64,
+            size: std::mem::size_of_val(data_a) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -405,8 +418,9 @@ impl MyceliumWeb {
         });
 
         // Encode commands
-        let mut encoder =
-            device.create_command_encoder(&CommandEncoderDescriptor { label: Some("lerp_encoder") });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("lerp_encoder"),
+        });
 
         {
             let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -415,7 +429,7 @@ impl MyceliumWeb {
             });
             compute_pass.set_pipeline(&pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups((dim + 255) / 256, 1, 1);
+            compute_pass.dispatch_workgroups(dim.div_ceil(256), 1, 1);
         }
 
         queue.submit(Some(encoder.finish()));
@@ -428,7 +442,8 @@ impl MyceliumWeb {
             let _ = tx.send(result);
         });
         device.poll(Maintain::Wait);
-        rx.await.map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
+        rx.await
+            .map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
 
         let data = buffer_slice.get_mapped_range();
         let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
@@ -446,7 +461,7 @@ impl MyceliumWeb {
         a: &[f32],
         b: &[f32],
         m: u32,
-        k: u32,
+        _k: u32,
         n: u32,
     ) -> Result<Vec<f32>, JsError> {
         let guard = gpu.lock().unwrap();
@@ -536,9 +551,18 @@ impl MyceliumWeb {
             label: Some("matmul_bind_group"),
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: buf_a.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: buf_b.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buf_a.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: buf_b.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: output_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -553,7 +577,7 @@ impl MyceliumWeb {
             });
             compute_pass.set_pipeline(&pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups((m + 15) / 16, (n + 15) / 16, 1);
+            compute_pass.dispatch_workgroups(m.div_ceil(16), n.div_ceil(16), 1);
         }
 
         queue.submit(Some(encoder.finish()));
@@ -565,7 +589,8 @@ impl MyceliumWeb {
             let _ = tx.send(result);
         });
         device.poll(Maintain::Wait);
-        rx.await.map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
+        rx.await
+            .map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
 
         let data = buffer_slice.get_mapped_range();
         let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
@@ -596,7 +621,7 @@ impl MyceliumWeb {
 
         let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("activation_output"),
-            size: (input.len() * std::mem::size_of::<f32>()) as u64,
+            size: std::mem::size_of_val(input) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -727,7 +752,7 @@ impl MyceliumWeb {
             });
             compute_pass.set_pipeline(&pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups((dim + 255) / 256, 1, 1);
+            compute_pass.dispatch_workgroups(dim.div_ceil(256), 1, 1);
         }
 
         queue.submit(Some(encoder.finish()));
@@ -739,7 +764,8 @@ impl MyceliumWeb {
             let _ = tx.send(result);
         });
         device.poll(Maintain::Wait);
-        rx.await.map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
+        rx.await
+            .map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
 
         let data = buffer_slice.get_mapped_range();
         let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
@@ -769,7 +795,7 @@ impl MyceliumWeb {
 
         let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rmsnorm_output"),
-            size: (input.len() * std::mem::size_of::<f32>()) as u64,
+            size: std::mem::size_of_val(input) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -781,11 +807,21 @@ impl MyceliumWeb {
 
         #[repr(C)]
         #[derive(Copy, Clone)]
-        struct Params { dim: u32, operation: u32, t: f32, scale: f32 }
+        struct Params {
+            dim: u32,
+            operation: u32,
+            t: f32,
+            scale: f32,
+        }
         unsafe impl bytemuck::Pod for Params {}
         unsafe impl bytemuck::Zeroable for Params {}
 
-        let params = Params { dim, operation: 5, t: eps, scale: 0.0 }; // operation 5 = rms_norm
+        let params = Params {
+            dim,
+            operation: 5,
+            t: eps,
+            scale: 0.0,
+        }; // operation 5 = rms_norm
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("rmsnorm_uniforms"),
             contents: bytemuck::bytes_of(&params),
@@ -796,18 +832,33 @@ impl MyceliumWeb {
             label: Some("rmsnorm_bind_group_layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding: 0, visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1, visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None },
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 2, visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
             ],
@@ -815,11 +866,13 @@ impl MyceliumWeb {
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("rmsnorm_pipeline"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("rmsnorm_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            })),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("rmsnorm_pipeline_layout"),
+                    bind_group_layouts: &[&bind_group_layout],
+                    push_constant_ranges: &[],
+                }),
+            ),
             module: &shader,
             entry_point: Some("main"),
             compilation_options: Default::default(),
@@ -830,21 +883,32 @@ impl MyceliumWeb {
             label: Some("rmsnorm_bind_group"),
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: buf_input.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buf_input.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
             ],
         });
 
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor { label: Some("rmsnorm_encoder") });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("rmsnorm_encoder"),
+        });
         {
-            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor { 
+            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rmsnorm_compute_pass"),
                 timestamp_writes: None,
             });
             compute_pass.set_pipeline(&pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups((dim + 255) / 256, 1, 1);
+            compute_pass.dispatch_workgroups(dim.div_ceil(256), 1, 1);
         }
 
         queue.submit(Some(encoder.finish()));
@@ -852,9 +916,12 @@ impl MyceliumWeb {
 
         let buffer_slice = output_buffer.slice(..);
         let (tx, rx) = futures::channel::oneshot::channel();
-        buffer_slice.map_async(MapMode::Read, move |result| { let _ = tx.send(result); });
+        buffer_slice.map_async(MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
         device.poll(Maintain::Wait);
-        rx.await.map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
+        rx.await
+            .map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
 
         let data = buffer_slice.get_mapped_range();
         let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();

@@ -17,10 +17,10 @@
 
 use anyhow::Result;
 use axum::{
+    Router,
     extract::{State, WebSocketUpgrade},
     response::{Html, IntoResponse, Json},
     routing::{get, post},
-    Router,
 };
 use futures::StreamExt;
 use mycelium_core::{InferenceRequest, InferenceResponse, LatentVector, NodeId};
@@ -67,7 +67,7 @@ impl AppState {
         let mut l = self.running_loss.write().await;
         *l = loss;
     }
-    
+
     /// Update network status.
     pub async fn update_network_status(&self, peers: usize, vram: u32) {
         let mut p = self.connected_peers.write().await;
@@ -153,9 +153,15 @@ pub struct GenerateRequest {
     pub layer_idx: Option<usize>,
 }
 
-fn default_max_tokens() -> usize { 256 }
-fn default_temperature() -> f32 { 0.7 }
-fn default_top_p() -> f32 { 0.9 }
+fn default_max_tokens() -> usize {
+    256
+}
+fn default_temperature() -> f32 {
+    0.7
+}
+fn default_top_p() -> f32 {
+    0.9
+}
 
 /// Generate text response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,8 +195,12 @@ pub struct LatentExploreRequest {
     pub morph_t: f32,
 }
 
-fn default_layer() -> usize { 32 }
-fn default_morph_t() -> f32 { 0.5 }
+fn default_layer() -> usize {
+    32
+}
+fn default_morph_t() -> f32 {
+    0.5
+}
 
 /// Latent exploration response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,8 +224,12 @@ pub struct TuneRequest {
     pub learning_rate: f64,
 }
 
-fn default_tune_steps() -> usize { 100 }
-fn default_lr() -> f64 { 1e-4 }
+fn default_tune_steps() -> usize {
+    100
+}
+fn default_lr() -> f64 {
+    1e-4
+}
 
 /// Spore creation request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,13 +257,13 @@ pub struct ErrorResponse {
 pub trait InferenceBackend: Send + Sync {
     /// Run inference on a request.
     async fn infer(&self, request: InferenceRequest) -> anyhow::Result<InferenceResponse>;
-    
+
     /// Extract latent at a specific layer.
     async fn extract_latent(&self, prompt: &str, layer_idx: usize) -> anyhow::Result<LatentVector>;
-    
+
     /// Apply a LoRA adapter.
     async fn apply_lora(&mut self, adapter: mycelium_core::LoRAAdapter) -> anyhow::Result<()>;
-    
+
     /// Check if a model is loaded.
     fn is_model_loaded(&self) -> bool;
 }
@@ -264,10 +278,19 @@ pub struct InferenceService {
     nucleus_tx: Option<Arc<tokio::sync::mpsc::Sender<(LatentVector, LatentVector, f32)>>>,
 }
 
+impl Default for InferenceService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InferenceService {
     /// Create a new inference service.
     pub fn new() -> Self {
-        Self { backend: None, nucleus_tx: None }
+        Self {
+            backend: None,
+            nucleus_tx: None,
+        }
     }
 
     /// Set the inference backend.
@@ -276,17 +299,21 @@ impl InferenceService {
     }
 
     /// Connect to nucleus for automatic experience collection.
-    pub fn set_nucleus_tx(&mut self, tx: Arc<tokio::sync::mpsc::Sender<(LatentVector, LatentVector, f32)>>) {
+    pub fn set_nucleus_tx(
+        &mut self,
+        tx: Arc<tokio::sync::mpsc::Sender<(LatentVector, LatentVector, f32)>>,
+    ) {
         self.nucleus_tx = Some(tx);
     }
 
     /// Record experience from inference result (input/output latent pair).
+    #[allow(dead_code)]
     async fn record_experience(&self, input: &LatentVector, output: &LatentVector, reward: f32) {
         if let Some(ref tx) = self.nucleus_tx {
             let _ = tx.send((input.clone(), output.clone(), reward)).await;
         }
     }
-    
+
     /// Run inference.
     pub async fn infer(&self, request: InferenceRequest) -> anyhow::Result<InferenceResponse> {
         if let Some(backend) = &self.backend {
@@ -303,7 +330,7 @@ impl InferenceService {
             })
         }
     }
-    
+
     /// Extract latent.
     pub async fn extract_latent(&self, prompt: &str, layer: usize) -> anyhow::Result<LatentVector> {
         if let Some(backend) = &self.backend {
@@ -313,7 +340,7 @@ impl InferenceService {
             anyhow::bail!("No inference backend loaded")
         }
     }
-    
+
     /// Apply LoRA.
     pub async fn apply_lora(&mut self, adapter: mycelium_core::LoRAAdapter) -> anyhow::Result<()> {
         if let Some(backend) = &mut self.backend {
@@ -323,7 +350,7 @@ impl InferenceService {
             anyhow::bail!("No inference backend loaded")
         }
     }
-    
+
     /// Check if model is loaded.
     pub fn is_model_loaded(&self) -> bool {
         self.backend.is_some()
@@ -373,7 +400,8 @@ pub async fn serve(state: AppState, config: FruitConfig) -> Result<()> {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 async fn root() -> Html<&'static str> {
-    Html(r#"
+    Html(
+        r#"
 <!DOCTYPE html>
 <html>
 <head><title>🍄 Mycelium Node</title></head>
@@ -393,7 +421,8 @@ async fn root() -> Html<&'static str> {
 <p style="color:#888">ॐ तारे तुत्तारे तुरे स्वा</p>
 </body>
 </html>
-"#)
+"#,
+    )
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -409,9 +438,9 @@ async fn status(State(state): State<AppState>) -> Json<NodeStatus> {
     let network_vram = state.network_vram_mb.read().await;
     let assigned_layers = state.assigned_layers.read().await;
     let assigned_experts = state.assigned_experts.read().await;
-    
+
     Json(NodeStatus {
-        node_id: status.node_id.clone(),
+        node_id: status.node_id,
         status: "running".into(),
         uptime_secs: status.uptime_secs,
         peers_connected: *connected_peers,
@@ -431,7 +460,7 @@ async fn generate(
 ) -> Result<Json<GenerateResponse>, (StatusCode, Json<ErrorResponse>)> {
     let start = std::time::Instant::now();
     let request_id = uuid::Uuid::new_v4();
-    
+
     let inference_request = InferenceRequest {
         id: request_id,
         prompt: req.prompt.clone(),
@@ -441,7 +470,10 @@ async fn generate(
         latent_mode: req.latent_mode || req.layer_idx.is_some(),
     };
 
-    info!("Generate request: '{}' (max_tokens={}, temp={:.2})", req.prompt, req.max_tokens, req.temperature);
+    info!(
+        "Generate request: '{}' (max_tokens={}, temp={:.2})",
+        req.prompt, req.max_tokens, req.temperature
+    );
 
     // Try to use the inference service if available
     let response = {
@@ -464,7 +496,10 @@ async fn generate(
             // No backend - return queued message
             InferenceResponse {
                 id: request_id,
-                text: Some(format!("[Inference queued: {} tokens requested]", req.max_tokens)),
+                text: Some(format!(
+                    "[Inference queued: {} tokens requested]",
+                    req.max_tokens
+                )),
                 latents: Vec::new(),
                 participating_nodes: Vec::new(),
                 latency_ms: start.elapsed().as_millis() as u64,
@@ -474,19 +509,23 @@ async fn generate(
 
     let mut status = state.status.write().await;
     status.inference_count += 1;
-    
+
     // Extract latent info if present
     let latent_info = response.latents.first().map(|latent| LatentInfo {
         dim: latent.data.len(),
         layer_idx: latent.layer_idx,
         preview: latent.data.iter().take(64).copied().collect(),
     });
-    
+
     let text = response.text.unwrap_or_default();
     let tokens_generated = text.len();
     let latency_ms = start.elapsed().as_millis() as u64;
-    let nodes = response.participating_nodes.iter().map(|n| n.to_string()).collect();
-    
+    let nodes = response
+        .participating_nodes
+        .iter()
+        .map(|n| n.to_string())
+        .collect();
+
     Ok(Json(GenerateResponse {
         text,
         tokens_generated,
@@ -500,7 +539,10 @@ async fn latent_explore(
     State(state): State<AppState>,
     Json(req): Json<LatentExploreRequest>,
 ) -> Json<LatentExploreResponse> {
-    info!("Latent explore: '{}' at layer {}", req.prompt, req.layer_idx);
+    info!(
+        "Latent explore: '{}' at layer {}",
+        req.prompt, req.layer_idx
+    );
 
     // Try to extract real latent if service available
     let (dim, preview, morphed, similarity) = {
@@ -510,14 +552,14 @@ async fn latent_explore(
                 Ok(latent) => {
                     let dim = latent.data.len();
                     let preview: Vec<f32> = latent.data.iter().take(256).copied().collect();
-                    
+
                     // If morph requested, compute similarity
                     let morphed_preview = req.morph_with.as_ref().map(|_morph_prompt| {
                         // For now, return the same latent - morphing requires two latents
                         preview.clone()
                     });
                     let similarity = req.morph_with.as_ref().map(|_| 1.0);
-                    
+
                     (dim, preview, morphed_preview, similarity)
                 }
                 Err(e) => {
@@ -546,7 +588,10 @@ async fn tune(
     State(state): State<AppState>,
     Json(req): Json<TuneRequest>,
 ) -> Json<serde_json::Value> {
-    info!("Tune request: {} steps at lr={}", req.steps, req.learning_rate);
+    info!(
+        "Tune request: {} steps at lr={}",
+        req.steps, req.learning_rate
+    );
 
     // Trigger a training burst by adding self-play samples
     // The nucleus training loop will pick them up automatically
@@ -569,7 +614,10 @@ async fn create_spore(
     State(state): State<AppState>,
     Json(req): Json<CreateSporeRequest>,
 ) -> Json<serde_json::Value> {
-    info!("Create spore: {} layers {}-{}", req.model_name, req.layer_start, req.layer_end);
+    info!(
+        "Create spore: {} layers {}-{}",
+        req.model_name, req.layer_start, req.layer_end
+    );
 
     let spore_id = uuid::Uuid::new_v4();
     let node_id = state.node_id.to_string();
@@ -687,7 +735,7 @@ mod tests {
             assigned_experts: Arc::new(RwLock::new(Vec::new())),
             inference_service: Arc::new(RwLock::new(None)),
         };
-        
+
         assert_eq!(state.node_id, node_id);
     }
 }
