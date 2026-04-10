@@ -442,5 +442,5 @@ AGPL-3.0 — Copyleft. Freedom for all sentient beings.
 - WebGPU: matmul shader needs full implementation (lerp/activation working)
 - Real model loading: requires actual GGUF file to exercise full pipeline
 - Single-node only: multi-node integration test pending
-- API handlers: /generate and /latent wired to inference backend, but /tune and /spore remain placeholder
+- API handlers: /generate, /latent, /tune, /spore all wired to inference backend
 

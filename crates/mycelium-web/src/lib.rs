@@ -442,16 +442,137 @@ impl MyceliumWeb {
 
     async fn gpu_matmul(
         &self,
-        _gpu: &Arc<Mutex<GpuContext>>,
-        _a: &[f32],
-        _b: &[f32],
-        _m: u32,
-        _k: u32,
-        _n: u32,
+        gpu: &Arc<Mutex<GpuContext>>,
+        a: &[f32],
+        b: &[f32],
+        m: u32,
+        k: u32,
+        n: u32,
     ) -> Result<Vec<f32>, JsError> {
-        // TODO: Implement full matmul with WebGPU
-        // For now, return CPU result
-        Err(JsError::new("GPU matmul not yet implemented"))
+        let guard = gpu.lock().unwrap();
+        let device = &guard.device;
+        let queue = &guard.queue;
+        let output_size = (m * n) as usize * std::mem::size_of::<f32>();
+
+        // Create input buffers (column-major for GGUF style)
+        let buf_a = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("matmul_a"),
+            contents: bytemuck::cast_slice(a),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        });
+
+        let buf_b = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("matmul_b"),
+            contents: bytemuck::cast_slice(b),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        });
+
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("matmul_output"),
+            size: output_size as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        // Load matmul shader
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("matmul"),
+            source: ShaderSource::Wgsl(include_str!("../../../shaders/matmul.wgsl").into()),
+        });
+
+        // Create pipeline for matmul
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("matmul_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("matmul_pipeline"),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("matmul_pipeline_layout"),
+                    bind_group_layouts: &[&bind_group_layout],
+                    push_constant_ranges: &[],
+                }),
+            ),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("matmul_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: buf_a.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: buf_b.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: output_buffer.as_entire_binding() },
+            ],
+        });
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("matmul_encoder"),
+        });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("matmul_compute_pass"),
+            });
+            compute_pass.set_pipeline(&pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups((m + 15) / 16, (n + 15) / 16, 1);
+        }
+
+        queue.submit(Some(encoder.finish()));
+        device.poll(Maintain::Wait);
+
+        let buffer_slice = output_buffer.slice(..);
+        let (tx, rx) = futures::channel::oneshot::channel();
+        buffer_slice.map_async(MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(Maintain::Wait);
+        rx.await.map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
+
+        let data = buffer_slice.get_mapped_range();
+        let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+
+        drop(data);
+        output_buffer.unmap();
+
+        Ok(result)
     }
 
     async fn gpu_activation(
@@ -630,14 +751,113 @@ impl MyceliumWeb {
 
     async fn gpu_rms_norm(
         &self,
-        _gpu: &Arc<Mutex<GpuContext>>,
+        gpu: &Arc<Mutex<GpuContext>>,
         input: &[f32],
         eps: f32,
     ) -> Result<Vec<f32>, JsError> {
-        // CPU fallback for now - RMSNorm requires reduction which is complex in WGSL
-        let dim = input.len();
-        let rms = (input.iter().map(|x| x * x).sum::<f32>() / dim as f32).sqrt();
-        Ok(input.iter().map(|x| x / (rms + eps)).collect())
+        let guard = gpu.lock().unwrap();
+        let device = &guard.device;
+        let queue = &guard.queue;
+        let dim = input.len() as u32;
+
+        let buf_input = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("rmsnorm_input"),
+            contents: bytemuck::cast_slice(input),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+        });
+
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rmsnorm_output"),
+            size: (input.len() * std::mem::size_of::<f32>()) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("rmsnorm"),
+            source: ShaderSource::Wgsl(include_str!("../../../shaders/latent_ops.wgsl").into()),
+        });
+
+        #[repr(C)]
+        #[derive(Copy, Clone)]
+        struct Params { dim: u32, operation: u32, t: f32, scale: f32 }
+        unsafe impl bytemuck::Pod for Params {}
+        unsafe impl bytemuck::Zeroable for Params {}
+
+        let params = Params { dim, operation: 5, t: eps, scale: 0.0 }; // operation 5 = rms_norm
+        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("rmsnorm_uniforms"),
+            contents: bytemuck::bytes_of(&params),
+            usage: BufferUsages::UNIFORM,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rmsnorm_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0, visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1, visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2, visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("rmsnorm_pipeline"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("rmsnorm_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            })),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rmsnorm_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: buf_input.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: uniform_buffer.as_entire_binding() },
+            ],
+        });
+
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor { label: Some("rmsnorm_encoder") });
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("rmsnorm_compute_pass") });
+            compute_pass.set_pipeline(&pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups((dim + 255) / 256, 1, 1);
+        }
+
+        queue.submit(Some(encoder.finish()));
+        device.poll(Maintain::Wait);
+
+        let buffer_slice = output_buffer.slice(..);
+        let (tx, rx) = futures::channel::oneshot::channel();
+        buffer_slice.map_async(MapMode::Read, move |result| { let _ = tx.send(result); });
+        device.poll(Maintain::Wait);
+        rx.await.map_err(|e| JsError::new(&format!("Failed to read GPU buffer: {:?}", e)))??;
+
+        let data = buffer_slice.get_mapped_range();
+        let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        output_buffer.unmap();
+
+        Ok(result)
     }
 }
 

@@ -544,6 +544,109 @@ pub async fn shard_gguf_by_layers(
     Ok(output_paths)
 }
 
+// ─── Latent Memory Store ────────────────────────────────────────────────────
+
+/// Persistent storage for latent vectors.
+/// This enables persistent latent memory across inference requests.
+#[derive(Debug, Clone)]
+pub struct LatentMemoryStore {
+    base_dir: PathBuf,
+    max_entries: usize,
+}
+
+impl LatentMemoryStore {
+    /// Create a new latent memory store.
+    pub fn new(base_dir: impl Into<PathBuf>, max_entries: usize) -> Self {
+        Self {
+            base_dir: base_dir.into(),
+            max_entries,
+        }
+    }
+
+    /// Initialize the store directory.
+    pub async fn init(&self) -> Result<()> {
+        tokio::fs::create_dir_all(&self.base_dir).await?;
+        let latent_dir = self.base_dir.join("latents");
+        tokio::fs::create_dir_all(&latent_dir).await?;
+        info!("Latent store initialized at {}", self.base_dir.display());
+        Ok(())
+    }
+
+    /// Store a latent vector with its associated metadata.
+    pub async fn store(
+        &self,
+        key: &str,
+        latent: &mycelium_core::LatentVector,
+        metadata: Option<String>,
+    ) -> Result<()> {
+        let latent_dir = self.base_dir.join("latents");
+        let path = latent_dir.join(format!("{}.json", key));
+
+        let entry = serde_json::json!({
+            "key": key,
+            "latent": latent,
+            "metadata": metadata,
+            "stored_at": chrono::Utc::now().timestamp(),
+        });
+
+        tokio::fs::write(&path, serde_json::to_string_pretty(&entry)?).await?;
+        info!("Stored latent '{}' to {}", key, path.display());
+        Ok(())
+    }
+
+    /// Retrieve a latent vector by key.
+    pub async fn get(&self, key: &str) -> Result<Option<mycelium_core::LatentVector>> {
+        let latent_dir = self.base_dir.join("latents");
+        let path = latent_dir.join(format!("{}.json", key));
+
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let content = tokio::fs::read_to_string(&path).await?;
+        let entry: serde_json::Value = serde_json::from_str(&content)?;
+        let latent = entry["latent"].clone();
+        let latent: mycelium_core::LatentVector = serde_json::from_value(latent)?;
+        Ok(Some(latent))
+    }
+
+    /// List all stored latent keys.
+    pub async fn list_keys(&self) -> Result<Vec<String>> {
+        let latent_dir = self.base_dir.join("latents");
+        let mut entries = tokio::fs::read_dir(&latent_dir).await?;
+        let mut keys = Vec::new();
+
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.path().extension().map(|e| e == "json").unwrap_or(false) {
+                if let Some(name) = entry.file_name().to_str() {
+                    let key = name.trim_end_matches(".json");
+                    keys.push(key.to_string());
+                }
+            }
+        }
+
+        Ok(keys)
+    }
+
+    /// Delete a latent by key.
+    pub async fn delete(&self, key: &str) -> Result<()> {
+        let latent_dir = self.base_dir.join("latents");
+        let path = latent_dir.join(format!("{}.json", key));
+
+        if path.exists() {
+            tokio::fs::remove_file(&path).await?;
+            info!("Deleted latent '{}'", key);
+        }
+        Ok(())
+    }
+
+    /// Get the number of stored latents.
+    pub async fn count(&self) -> Result<usize> {
+        let keys = self.list_keys().await?;
+        Ok(keys.len())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

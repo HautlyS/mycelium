@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mycelium — Decentralized AI Node</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        header {
+            text-align: center;
+            padding: 3rem 0;
+            border-bottom: 1px solid #222;
+        }
+        h1 {
+            font-size: 3rem;
+            background: linear-gradient(135deg, #7c3aed, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 1.2rem;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .card {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            border-color: #7c3aed;
+            transform: translateY(-2px);
+        }
+        .card h3 {
+            color: #a855f7;
+            margin-bottom: 0.5rem;
+        }
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .status.ready { background: #10b981; color: #fff; }
+        .status.loading { background: #f59e0b; color: #fff; }
+        .status.error { background: #ef4444; color: #fff; }
+        .btn {
+            background: linear-gradient(135deg, #7c3aed, #a855f7);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            margin: 0.5rem 0;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        input, textarea {
+            width: 100%;
+            background: #1a1a1f;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 0.75rem;
+            color: #e0e0e0;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+        textarea { resize: vertical; min-height: 100px; }
+        .output {
+            background: #0d0d12;
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        #capabilities { margin-top: 1rem; }
+        .metric { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #222; }
+        .metric:last-child { border-bottom: none; }
+        .metric-value { color: #a855f7; font-weight: 600; }
+        footer {
+            text-align: center;
+            padding: 2rem;
+            margin-top: 3rem;
+            border-top: 1px solid #222;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍄 Mycelium</h1>
+            <p class="subtitle">Decentralized P2P Self-Replicating AI — Browser Node</p>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h3>⚡ System Status</h3>
+                <p id="status" class="status loading">Initializing...</p>
+                <div id="capabilities"></div>
+            </div>
+
+            <div class="card">
+                <h3>🧠 Latent Operations</h3>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 1rem;">
+                    Test latent space interpolation on GPU or CPU
+                </p>
+                <button id="testLerp" class="btn">Test Latent Lerp</button>
+                <div id="lerpOutput" class="output" style="display:none;"></div>
+            </div>
+
+            <div class="card">
+                <h3>📡 P2P Network</h3>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 1rem;">
+                    Connect to the Mycelium network (future)
+                </p>
+                <input type="text" id="bootstrapNode" placeholder="Bootstrap node address..." />
+                <button id="connectBtn" class="btn" disabled>Connect</button>
+                <div id="networkStatus" class="output" style="display:none;"></div>
+            </div>
+
+            <div class="card">
+                <h3>🔄 Self-Tuning</h3>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 1rem;">
+                    Local LoRA fine-tuning status
+                </p>
+                <div id="tuningStatus">No active training</div>
+            </div>
+
+            <div class="card">
+                <h3>🌱 Spore Protocol</h3>
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 1rem;">
+                    Self-replication status
+                </p>
+                <button id="createSpore" class="btn" disabled>Create Spore</button>
+                <button id="germinateBtn" class="btn" disabled>Accept Spore</button>
+            </div>
+
+            <div class="card">
+                <h3>📊 Model Info</h3>
+                <div id="modelInfo"></div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Mycelium v0.1.0 — AGPL-3.0 — Running in browser via WebAssembly + WebGPU</p>
+            <p style="margin-top: 0.5rem; font-size: 0.875rem;">
+                ॐ तारे तुत्तारे तुरे स्वा — May all beings be free from suffering
+            </p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import init, { MyceliumWeb } from './pkg/mycelium_web.js';
+
+        let mycelium = null;
+
+        async function main() {
+            try {
+                await init();
+                mycelium = new MyceliumWeb();
+
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = 'Loading WebGPU...';
+                statusEl.className = 'status loading';
+
+                const gpuAvailable = await mycelium.init_gpu();
+
+                if (gpuAvailable) {
+                    statusEl.textContent = 'Ready (WebGPU)';
+                    statusEl.className = 'status ready';
+                } else {
+                    statusEl.textContent = 'Ready (CPU Fallback)';
+                    statusEl.className = 'status ready';
+                }
+
+                displayCapabilities();
+                displayModelInfo();
+                setupHandlers();
+
+            } catch (error) {
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = 'Error: ' + error.message;
+                statusEl.className = 'status error';
+                console.error('Init error:', error);
+            }
+        }
+
+        function displayCapabilities() {
+            const caps = mycelium.capabilities;
+            const el = document.getElementById('capabilities');
+            el.innerHTML = `
+                <div class="metric"><span>Target</span><span class="metric-value">${caps.target}</span></div>
+                <div class="metric"><span>Compute</span><span class="metric-value">${caps.compute}</span></div>
+                <div class="metric"><span>Hidden Dim</span><span class="metric-value">${caps.hidden_dim}</span></div>
+                <div class="metric"><span>Experts</span><span class="metric-value">${caps.num_experts}</span></div>
+                <div class="metric"><span>Context</span><span class="metric-value">${caps.context_length?.toLocaleString()}</span></div>
+            `;
+        }
+
+        function displayModelInfo() {
+            const config = mycelium.model_config;
+            const el = document.getElementById('modelInfo');
+            el.innerHTML = `
+                <div class="metric"><span>Model</span><span class="metric-value">MiniMax M2.5</span></div>
+                <div class="metric"><span>Layers</span><span class="metric-value">${config.num_layers}</span></div>
+                <div class="metric"><span>VRAM Est.</span><span class="metric-value">${config.vram_estimate_mb} MB</span></div>
+            `;
+        }
+
+        function setupHandlers() {
+            document.getElementById('testLerp').addEventListener('click', async () => {
+                const output = document.getElementById('lerpOutput');
+                output.style.display = 'block';
+                output.textContent = 'Computing latent lerp on GPU...';
+
+                const dim = 64;
+                const a = mycelium.random_latent(dim, 0);
+                const b = mycelium.random_latent(dim, 0);
+
+                const start = performance.now();
+                const result = await mycelium.latent_lerp(a, b, 0.5);
+                const elapsed = performance.now() - start;
+
+                output.textContent = `Latent lerp complete!\nDim: ${dim}\nTime: ${elapsed.toFixed(2)}ms\nFirst 5 values: ${result.slice(0, 5).join(', ')}`;
+            });
+
+            document.getElementById('connectBtn').addEventListener('click', () => {
+                const output = document.getElementById('networkStatus');
+                output.style.display = 'block';
+                output.textContent = 'P2P networking coming in v0.2.0';
+            });
+
+            document.getElementById('createSpore').addEventListener('click', () => {
+                document.getElementById('tuningStatus').textContent = 'Spore creation coming in v0.2.0';
+            });
+
+            document.getElementById('germinateBtn').addEventListener('click', () => {
+                document.getElementById('tuningStatus').textContent = 'Spore germination coming in v0.2.0';
+            });
+        }
+
+        main();
+    </script>
+</body>
+</html>

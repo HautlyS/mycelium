@@ -1,0 +1,61 @@
+[package]
+name = "mycelium-web"
+version.workspace = true
+edition.workspace = true
+description = "WASM/WebGPU entry point for Mycelium in the browser"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "Headers",
+    "console::Object",
+] }
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-wasm = "0.2"
+
+mycelium-core = { workspace = true }
+mycelium-compute = { workspace = true }
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+    "GpuDeviceDescriptor",
+    "GpuQueue",
+    "GpuBuffer",
+    "GpuBufferDescriptor",
+    "GpuComputePipeline",
+    "GpuComputePipelineDescriptor",
+    "GpuBindGroup",
+    "GpuBindGroupDescriptor",
+    "GpuBindGroupEntry",
+    "GpuShaderModule",
+    "GpuShaderModuleDescriptor",
+    "GpuCommandEncoder",
+    "GpuCommandBuffer",
+    "GpuComputePass",
+    "Window",
+]
+
+[profile.release]
+lto = true
+opt-level = "s"
