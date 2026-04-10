@@ -1,0 +1,17 @@
+[package]
+name = "mycelium-core"
+version.workspace = true
+edition.workspace = true
+
+[features]
+cuda = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }

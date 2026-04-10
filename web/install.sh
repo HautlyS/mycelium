@@ -1,6 +1,6 @@
 #!/bin/bash
 # Mycelium One-Line Installer
-# Run: curl -L mycelium.ai/install | bash
+# Run: curl -L https://hautlys.github.io/mycelium/install.sh | bash
 # Or:  curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bash
 
 set -e
@@ -8,79 +8,80 @@ set -e
 MYCELIUM_VERSION="v0.2.0"
 MYCELIUM_REPO="HautlyS/mycelium"
 
-echo "🍄 Installing Mycelium $MYCELIUM_VERSION..."
+echo "🍄 Mycelium $MYCELIUM_VERSION Installer"
+echo "=================================="
 
 # Detect OS
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
 case "$OS" in
-    Linux*)     PLATFORM="unknown-linux-gnu" ;;
-    Darwin*)   PLATFORM="apple-darwin" ;;
-    MINGW*|MSYS*|CYGWIN*) PLATFORM="pc-windows-msvc" ;;
-    *)         PLATFORM="unknown-linux-gnu" ;;
+    Linux*)     PLATFORM="x86_64-unknown-linux-gnu" ;;
+    Darwin*)   PLATFORM="x86_64-apple-darwin" ;;
+    MINGW*|MSYS*|CYGWIN*) PLATFORM="x86_64-pc-windows-msvc" ;;
+    *)         PLATFORM="x86_64-unknown-linux-gnu" ;;
 esac
 
 case "$ARCH" in
-    x86_64)      BINARY="x86_64" ;;
-    aarch64|arm64) BINARY="aarch64" ;;
-    arm*)        BINARY="arm" ;;
-    *)          BINARY="x86_64" ;;
+    x86_64)      ;;
+    aarch64|arm64) PLATFORM="aarch64-unknown-linux-gnu" ;;
 esac
 
-# Download release
-TARBALL="mycelium-${PLATFORM}.tar.gz"
-DOWNLOAD_URL="https://github.com/${MYCELIUM_REPO}/releases/latest/download/${TARBALL}"
 INSTALL_DIR="${HOME}/.mycelium"
+BIN_DIR="${INSTALL_DIR}/bin"
 
-# Create install directory
-mkdir -p "$INSTALL_DIR/bin"
+echo "Platform: $PLATFORM"
+echo "Installing to: ${BIN_DIR}"
 
-# Download using curl or wget
-echo "📥 Downloading from GitHub..."
-if command -v curl &> /dev/null; then
-    curl -sL "$DOWNLOAD_URL" -o "/tmp/${TARBALL}" || {
-        echo "❌ Download failed. Trying alternative..."
-        # Fallback: download native binary directly
-        NATIVE_URL="https://github.com/${MYCELIUM_REPO}/releases/latest/download/mycelium-node"
-        curl -sL "$NATIVE_URL" -o "$INSTALL_DIR/bin/mycelium-node"
-        chmod +x "$INSTALL_DIR/bin/mycelium-node"
-        echo "✅ Installed to $INSTALL_DIR/bin/mycelium-node"
-        exit 0
-    }
-elif command -v wget &> /dev/null; then
-    wget -q "$DOWNLOAD_URL" -O "/tmp/${TARBALL}" || {
-        echo "❌ Download failed"
+mkdir -p "$BIN_DIR"
+
+# Download the latest release
+BASE_URL="https://github.com/${MYCELIUM_REPO}/releases/latest/download"
+
+# Download binary
+echo "📥 Downloading..."
+SUCCESS=false
+
+for NAME in "mycelium-node" "mycelium-${PLATFORM}"; do
+    URL="${BASE_URL}/${NAME}"
+    if curl -sfI "$URL" >/dev/null 2>&1; then
+        echo "Downloading: $URL"
+        if curl -sL "$URL" -o "${BIN_DIR}/mycelium-node"; then
+            SUCCESS=true
+            break
+        fi
+    fi
+done
+
+if [ "$SUCCESS" = "false" ]; then
+    # Try cargo install as fallback
+    echo "📦 Trying cargo install..."
+    if command -v cargo &> /dev/null; then
+        cargo install --git "https://github.com/${MYCELIUM_REPO}.git" --locked || true
+    else
+        echo "❌ Download failed. Install Rust from https://rustup.rs and run:"
+        echo "   cargo install --git https://github.com/${MYCELIUM_REPO}.git"
         exit 1
-    }
-else
-    echo "❌ curl or wget required"
-    exit 1
+    fi
 fi
 
-# Extract
-echo "📦 Extracting..."
-tar -xzf "/tmp/${TARBALL}" -C "$INSTALL_DIR/bin/" 2>/dev/null || {
-    # If tar fails, try as plain binary
-    mv "/tmp/${TARBALL}" "$INSTALL_DIR/bin/mycelium-node" 2>/dev/null || true
-}
-
-chmod +x "$INSTALL_DIR/bin/mycelium-node"
+chmod +x "${BIN_DIR}/mycelium-node" 2>/dev/null || true
 
 # Add to PATH
 SHELL_RC="${HOME}/.bashrc"
-if [ -f "${HOME}/.zshrc" ]; then SHELL_RC="${HOME}/.zshrc"; fi
+[ -f "${HOME}/.zshrc" ] && SHELL_RC="${HOME}/.zshrc"
 
 if ! grep -q "mycelium" "$SHELL_RC" 2>/dev/null; then
     echo "" >> "$SHELL_RC"
-    echo "# Mycelium" >> "$SHELL_RC"
-    echo "export PATH=\"\$PATH:$INSTALL_DIR/bin\"" >> "$SHELL_RC"
+    echo "# Mycelium AI" >> "$SHELL_RC"
+    echo "export PATH=\"\$PATH:${BIN_DIR}\"" >> "$SHELL_RC"
 fi
 
-echo "✅ Mycelium installed to $INSTALL_DIR/bin/mycelium-node"
 echo ""
-echo "🍄 To start:"
-echo "   mycelium-node --listen 0.0.0.0:4001"
+echo "✅ Installation complete!"
 echo ""
-echo "🌐 Web interface: https://HautlyS.github.io/mycelium"
+echo "To run:"
+echo "   ${BIN_DIR}/mycelium-node --listen 0.0.0.0:4001"
 echo ""
+echo "Web UI: https://hautlys.github.io/mycelium/"
+echo "API:   http://localhost:8080"

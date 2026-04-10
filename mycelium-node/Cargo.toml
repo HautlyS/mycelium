@@ -1,0 +1,33 @@
+[package]
+name = "mycelium-node"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mycelium"
+path = "src/main.rs"
+
+[features]
+default = []
+cuda = ["mycelium-compute/cuda"]
+metal = ["mycelium-compute/metal"]
+
+[dependencies]
+mycelium-core = { workspace = true }
+mycelium-spore = { workspace = true }
+mycelium-hyphae = { workspace = true }
+mycelium-compute = { workspace = true }
+mycelium-nucleus = { workspace = true }
+mycelium-substrate = { workspace = true }
+mycelium-fruit = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+candle-core = { workspace = true }
+shellexpand = "3"
+async-trait = { workspace = true }

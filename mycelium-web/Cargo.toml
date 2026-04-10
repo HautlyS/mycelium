@@ -1,0 +1,38 @@
+[package]
+name = "mycelium-web"
+version.workspace = true
+edition.workspace = true
+description = "WebAssembly entry point for Mycelium - browser-based P2P AI node"
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+[dependencies]
+mycelium-core = { workspace = true }
+wgpu = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-wasm = "0.2"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "HtmlElement",
+    "WorkerGlobalScope",
+] }
+gloo-timers = { version = "0.3", features = ["futures"] }
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+bytemuck = { workspace = true }
+futures = "0.3"
+getrandom = { version = "0.2", features = ["js"] }
+uuid = { workspace = true, features = ["v4", "js"] }
+console_error_panic_hook = "0.1"
