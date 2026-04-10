@@ -12,29 +12,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Build and publish to GitHub Pages (simple static deploy)
+  # Build and publish to GitHub Pages using gh-pages branch
   build-web:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          build_type: static
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: web
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Deploy to gh-pages
+        run: |
+          git checkout -b gh-pages
+          git rm -rf .
+          cp -r web/* .
+          git add -A
+          git -c user.name="GitHub Actions" -c user.email="actions@github.com" commit -m "Deploy to GitHub Pages" || true
+          git push origin gh-pages --force
 
   # Build native (CPU) version
   build-native:

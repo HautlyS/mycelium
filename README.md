@@ -1,10 +1,11 @@
 # Mycelium — Decentralized P2P Self-Replicating AI
 
-**Join the network in 5 seconds flat:**
+**Join the network instantly:**
 
 ```bash
 # Option 1: Browser (no install!)
-https://HautlyS.github.io/mycelium
+# Open in Chrome/Firefox:
+https://hautlys.github.io/mycelium/
 
 # Option 2: One-line install
 curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bash
@@ -200,7 +201,7 @@ curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bas
 # Connect to bootstrap peers
 ./target/release/mycelium-node --bootstrap /ip4/1.2.3.4/tcp/4001/p2p/Qm...
 
-# Browser (WASM): https://HautlyS.github.io/mycelium
+# Browser (WASM): https://hautlys.github.io/mycelium/
 # Just open in browser - no install needed!
 ```
 
