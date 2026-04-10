@@ -7,11 +7,16 @@
 # Open in Chrome/Firefox:
 https://hautlys.github.io/mycelium/
 
-# Option 2: One-line install
-curl -L https://raw.githubusercontent.com/HautlyS/mycelium/main/install.sh | bash
+# Option 2: One-line install (works!)
+curl -L https://hautlys.github.io/mycelium/install.sh | bash
 
-# Option 3: Docker
-docker run -p 8080:8080 -p 4001:4001 ghcr.io/haultys/mycelium:latest
+# Option 3: Build from source
+git clone https://github.com/HautlyS/mycelium.git
+cd mycelium && cargo build --release
+
+# Option 4: Docker
+docker build -t mycelium .
+docker run -p 8080:8080 -p 4001:4001 mycelium
 ```
 
 <p align="center">
