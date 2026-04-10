@@ -10,8 +10,7 @@
 //! Build with: `wasm-pack build --target web crates/mycelium-web`
 
 use mycelium_core::{LatentVector, ModelConfig};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -235,9 +234,8 @@ impl MyceliumWeb {
 
     /// Generate a random latent vector (for testing).
     pub fn random_latent(&self, dim: usize, _layer: usize) -> Result<Vec<f32>, JsError> {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        Ok((0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+        use js_sys::Math;
+        Ok((0..dim).map(|_| (Math::random() as f32) * 2.0 - 1.0).collect())
     }
 
     /// Get the status of the WebGPU node.
@@ -265,7 +263,7 @@ impl MyceliumWeb {
         t: f32,
         dim: u32,
     ) -> Result<Vec<f32>, JsError> {
-        let guard = gpu.lock().await;
+        let guard = gpu.lock().unwrap();
         let device = &guard.device;
         let queue = &guard.queue;
 
@@ -359,13 +357,16 @@ impl MyceliumWeb {
 
         // Create uniform buffer for params
         #[repr(C)]
-        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        #[derive(Copy, Clone)]
         struct Params {
             dim: u32,
             operation: u32,
             t: f32,
             scale: f32,
         }
+        // Safety: Params is repr(C) and contains only POD types
+        unsafe impl bytemuck::Pod for Params {}
+        unsafe impl bytemuck::Zeroable for Params {}
 
         let params = Params {
             dim,
@@ -461,7 +462,7 @@ impl MyceliumWeb {
     ) -> Result<Vec<f32>, JsError> {
         // Use the same lerp infrastructure but with operation=4 (silu)
         let dim = input.len() as u32;
-        let guard = gpu.lock().await;
+        let guard = gpu.lock().unwrap();
         let device = &guard.device;
         let queue = &guard.queue;
 
@@ -485,13 +486,16 @@ impl MyceliumWeb {
 
         // Create uniform buffer
         #[repr(C)]
-        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        #[derive(Copy, Clone)]
         struct Params {
             dim: u32,
             operation: u32,
             t: f32,
             scale: f32,
         }
+        // Safety: Params is repr(C) and contains only POD types
+        unsafe impl bytemuck::Pod for Params {}
+        unsafe impl bytemuck::Zeroable for Params {}
 
         let params = Params {
             dim,

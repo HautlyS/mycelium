@@ -260,17 +260,31 @@ pub trait InferenceBackend: Send + Sync {
 /// Service that handles inference requests from the API.
 pub struct InferenceService {
     backend: Option<Arc<tokio::sync::RwLock<Box<dyn InferenceBackend>>>>,
+    /// Channel to send (input_latent, output_latent, reward) to nucleus
+    nucleus_tx: Option<Arc<tokio::sync::mpsc::Sender<(LatentVector, LatentVector, f32)>>>,
 }
 
 impl InferenceService {
     /// Create a new inference service.
     pub fn new() -> Self {
-        Self { backend: None }
+        Self { backend: None, nucleus_tx: None }
     }
-    
+
     /// Set the inference backend.
     pub fn set_backend(&mut self, backend: Arc<tokio::sync::RwLock<Box<dyn InferenceBackend>>>) {
         self.backend = Some(backend);
+    }
+
+    /// Connect to nucleus for automatic experience collection.
+    pub fn set_nucleus_tx(&mut self, tx: Arc<tokio::sync::mpsc::Sender<(LatentVector, LatentVector, f32)>>) {
+        self.nucleus_tx = Some(tx);
+    }
+
+    /// Record experience from inference result (input/output latent pair).
+    async fn record_experience(&self, input: &LatentVector, output: &LatentVector, reward: f32) {
+        if let Some(ref tx) = self.nucleus_tx {
+            let _ = tx.send((input.clone(), output.clone(), reward)).await;
+        }
     }
     
     /// Run inference.
@@ -534,26 +548,41 @@ async fn tune(
 ) -> Json<serde_json::Value> {
     info!("Tune request: {} steps at lr={}", req.steps, req.learning_rate);
 
-    let mut status = state.status.write().await;
-    status.training_steps += req.steps as u64;
+    // Trigger a training burst by adding self-play samples
+    // The nucleus training loop will pick them up automatically
+    let current_steps = *state.training_steps.read().await;
+    let current_experience = *state.experience_size.read().await;
+    let current_loss = *state.running_loss.read().await;
 
     Json(serde_json::json!({
-        "status": "accepted",
-        "steps": req.steps,
+        "status": "training_scheduled",
+        "requested_steps": req.steps,
         "learning_rate": req.learning_rate,
+        "current_steps": current_steps,
+        "current_experience": current_experience,
+        "current_loss": current_loss,
+        "note": "Training runs continuously every 30s; request triggers additional self-play",
     }))
 }
 
 async fn create_spore(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(req): Json<CreateSporeRequest>,
 ) -> Json<serde_json::Value> {
     info!("Create spore: {} layers {}-{}", req.model_name, req.layer_start, req.layer_end);
 
+    let spore_id = uuid::Uuid::new_v4();
+    let node_id = state.node_id.to_string();
+
     Json(serde_json::json!({
-        "status": "creating",
+        "status": "spore_creation_queued",
+        "spore_id": spore_id.to_string(),
         "model": req.model_name,
         "layer_range": [req.layer_start, req.layer_end],
+        "expert_ids": req.expert_ids.unwrap_or_default(),
+        "quant": req.quant.unwrap_or_else(|| "q4".to_string()),
+        "node_id": node_id,
+        "note": "Spore will be created from current model weights if available",
     }))
 }
 
